@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useAuth } from '@/contexts/AuthContext'; // <-- IMPORT DE L'AUTH POUR AVOIR LE NOM DU TECHNICIEN
+import { useAuth } from '@/contexts/AuthContext';
 import { PathologyType, CasePriority, CaseImage } from '@/types/case';
 import {
   Dialog,
@@ -39,11 +39,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
-  Loader2 // <-- Pour l'icône de chargement
+  Loader2 
 } from 'lucide-react';
 import { z } from 'zod';
 
-import { supabase } from '@/lib/supabase'; // <-- NOTRE CONNEXION À LA BASE DE DONNÉES
+import { supabase } from '@/lib/supabase'; 
 import MicroscopeLiveView from '@/components/ai/MicroscopeLiveView';
 
 interface CreateCaseModalProps {
@@ -74,13 +74,16 @@ type Step = 'patient' | 'case' | 'images' | 'review';
 
 const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, onSuccess }) => {
   const { t } = useLanguage();
-  const { user } = useAuth(); // Pour savoir qui crée le dossier
+  const { user } = useAuth(); 
   
   const [currentStep, setCurrentStep] = useState<Step>('patient');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [imageMode, setImageMode] = useState<'camera' | 'upload'>('camera');
+
+  // NOUVEAU : Référence pour forcer l'ouverture du sélecteur de fichiers
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [patientData, setPatientData] = useState({
     firstName: '',
@@ -178,6 +181,7 @@ const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, o
     toast.success("Image capturée avec succès");
   }, []);
 
+  // CORRECTION : Lecture du fichier en Base64 pour qu'il soit bien stocké dans le state (et envoyé à Supabase)
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -185,36 +189,33 @@ const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, o
     setUploading(true);
     setUploadProgress(0);
 
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 20;
-      });
-    }, 200);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      setUploadProgress(100);
-      
-      Array.from(files).forEach(file => {
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
         const newImage: CaseImage = {
           id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          url: URL.createObjectURL(file),
+          url: base64String, // URL Base64 réelle
           name: file.name,
           size: file.size,
           uploadedAt: new Date().toISOString(),
           qualityScore: Math.floor(Math.random() * 20) + 80,
         };
         setImages(prev => [...prev, newImage]);
-      });
+      };
+      reader.readAsDataURL(file);
+    });
 
-      setUploading(false);
-      setUploadProgress(0);
-      toast.success(t('case.imagesUploaded'));
-    }, 1500);
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 25;
+      setUploadProgress(progress);
+      if (progress >= 100) {
+        clearInterval(interval);
+        setUploading(false);
+        toast.success(t('case.imagesUploaded'));
+      }
+    }, 200);
 
     e.target.value = '';
   }, [t]);
@@ -223,18 +224,18 @@ const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, o
     setImages(prev => prev.filter(img => img.id !== imageId));
   };
 
-  // NOUVEAU : Fonction unique pour sauvegarder dans Supabase (brouillon ou en attente d'analyse)
   const saveCaseToSupabase = async (status: 'pending' | 'draft') => {
     setIsSubmitting(true);
     
     try {
-      // Génération du numéro de dossier
       const year = new Date().getFullYear();
       const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
       const caseReference = `KA-${year}-${randomNum}`;
       const fullName = `${patientData.firstName} ${patientData.lastName}`;
 
-      // Enregistrement dans Supabase
+      // NOUVEAU : On récupère la première image pour la lier au dossier
+      const imageUrlToSave = images.length > 0 ? images[0].url : null;
+
       const { data: newCase, error: caseError } = await supabase
         .from('cases')
         .insert([
@@ -248,6 +249,7 @@ const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, o
             images_count: images.length,
             analysis_notes: caseData.clinicalNotes,
             created_by: user?.id,
+            image_url: imageUrlToSave // L'image est envoyée ici !
           }
         ])
         .select()
@@ -255,7 +257,6 @@ const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, o
 
       if (caseError) throw caseError;
 
-      // Traçabilité de l'action
       if (newCase) {
         await supabase.from('activities').insert([
           {
@@ -425,13 +426,17 @@ const CreateCaseModal: React.FC<CreateCaseModalProps> = ({ open, onOpenChange, o
                 <div className="border border-border rounded-xl p-2 bg-muted/20"><MicroscopeLiveView onImageCaptured={handleLiveImageCapture} /></div>
               ) : (
                 <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center bg-card">
-                  <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" id="image-upload" disabled={uploading} />
-                  <label htmlFor="image-upload" className="cursor-pointer block">
-                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-sm font-medium">{t('case.dragDropImages')}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{t('case.supportedFormats')}</p>
-                    <Button variant="outline" className="mt-4" type="button" disabled={uploading}>{t('case.selectFiles')}</Button>
-                  </label>
+                  {/* CORRECTION : Liaison de l'input caché avec ref */}
+                 <Input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+                  
+                  <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-sm font-medium">{t('case.dragDropImages')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('case.supportedFormats')}</p>
+                  
+                  {/* CORRECTION : Ce bouton ouvre maintenant l'explorateur ! */}
+                  <Button variant="outline" className="mt-4" type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+                    {t('case.selectFiles')}
+                  </Button>
                 </div>
               )}
               {uploading && (
