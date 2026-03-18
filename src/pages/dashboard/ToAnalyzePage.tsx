@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useAuth } from '@/contexts/AuthContext'; // <-- AJOUT : Pour récupérer l'ID du médecin
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +32,7 @@ import StatCard from '@/components/dashboard/StatCard';
 import AIAnalysisPanel from '@/components/ai/AIAnalysisPanel';
 import MicroscopeLiveView from '@/components/ai/MicroscopeLiveView';
 import { supabase } from '@/lib/supabase';
-import { toast } from 'sonner'; // <-- AJOUT : Pour les notifications de succès/erreur
+import { toast } from 'sonner';
 import {
   Search,
   Filter,
@@ -58,8 +58,8 @@ import {
 } from 'lucide-react';
 
 interface CaseToAnalyze {
-  id: string; // Ce sera l'UUID de Supabase
-  caseReference?: string; // Ex: KA-2026-042
+  id: string;
+  caseReference?: string;
   patientId: string;
   patientName: string;
   pathology: 'breast' | 'cervical';
@@ -74,7 +74,7 @@ interface CaseToAnalyze {
 
 const ToAnalyzePage: React.FC = () => {
   const { t } = useLanguage();
-  const { user } = useAuth(); // <-- Récupération de l'utilisateur connecté
+  const { user } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPathology, setFilterPathology] = useState<string>('all');
@@ -97,8 +97,8 @@ const ToAnalyzePage: React.FC = () => {
       const { data, error } = await supabase
         .from('cases')
         .select('*')
-        .eq('status', 'pending') // On ne charge que les cas en attente
-        .order('submitted_at', { ascending: false });
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error("Erreur de récupération Supabase:", error);
@@ -107,11 +107,11 @@ const ToAnalyzePage: React.FC = () => {
           id: d.id,
           caseReference: d.case_reference,
           patientId: d.patient_id || 'N/A',
-          patientName: d.patient_name,
+          patientName: d.patient_name || 'Inconnu',
           pathology: d.pathology,
-          priority: d.priority,
-          center: d.center,
-          submittedAt: new Date(d.created_at).toLocaleString('fr-FR'), // Correction: created_at au lieu de submitted_at
+          priority: d.priority || 'normal',
+          center: d.center || 'Centre inconnu',
+          submittedAt: new Date(d.created_at).toLocaleString('fr-FR'),
           submittedBy: d.submitted_by || 'Technicien',
           imagesCount: d.images_count || 0,
           waitTime: 'En attente', 
@@ -127,12 +127,15 @@ const ToAnalyzePage: React.FC = () => {
   }, []);
 
   const filteredCases = realCases.filter((caseItem) => {
-    const matchesSearch =
-      (caseItem.caseReference?.toLowerCase().includes(searchTerm.toLowerCase()) || '') ||
-      caseItem.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      caseItem.patientId.toLowerCase().includes(searchTerm.toLowerCase());
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = searchTerm === '' ||
+      (caseItem.caseReference || '').toLowerCase().includes(searchLower) ||
+      (caseItem.patientName || '').toLowerCase().includes(searchLower) ||
+      (caseItem.patientId || '').toLowerCase().includes(searchLower);
+      
     const matchesPathology = filterPathology === 'all' || caseItem.pathology === filterPathology;
     const matchesPriority = filterPriority === 'all' || caseItem.priority === filterPriority;
+    
     return matchesSearch && matchesPathology && matchesPriority;
   });
 
@@ -170,25 +173,22 @@ const ToAnalyzePage: React.FC = () => {
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 25, 50));
   const handleResetZoom = () => setZoomLevel(100);
 
-  // LA VRAIE FONCTION POUR SAUVEGARDER LE DIAGNOSTIC DANS SUPABASE
   const submitAnalysis = async () => {
     if (!selectedCase) return;
     
     try {
-      // 1. Mise à jour du dossier dans la table 'cases'
       const { error: updateError } = await supabase
         .from('cases')
         .update({
           status: 'validated',
-          diagnosis: diagnosis, // Le diagnostic choisi par le médecin
-          analysis_notes: analysisNotes, // Les notes tapées
+          diagnosis: diagnosis,
+          analysis_notes: analysisNotes,
           validated_at: new Date().toISOString()
         })
-        .eq('id', selectedCase.id); // On s'assure de modifier le bon dossier
+        .eq('id', selectedCase.id);
 
       if (updateError) throw updateError;
 
-      // 2. Traçabilité (Audit) dans la table 'activities'
       await supabase.from('activities').insert([
         {
           case_id: selectedCase.id,
@@ -200,7 +200,6 @@ const ToAnalyzePage: React.FC = () => {
 
       toast.success('Le diagnostic a été enregistré et transmis au clinicien avec succès !');
       
-      // 3. On ferme la fenêtre et on retire le cas de la liste d'attente locale
       setIsAnalysisMode(false);
       setSelectedCase(null);
       setRealCases(prev => prev.filter(c => c.id !== selectedCase.id));
@@ -286,7 +285,7 @@ const ToAnalyzePage: React.FC = () => {
                     <TableHead>{t('table.caseId')}</TableHead>
                     <TableHead>{t('table.patient')}</TableHead>
                     <TableHead>{t('table.pathology')}</TableHead>
-                    <TableHead>{t('table.priority')}</TableHead>
+                    <TableHead>Priorité</TableHead>
                     <TableHead>{t('table.center')}</TableHead>
                     <TableHead>{t('table.submittedBy')}</TableHead>
                     <TableHead>{t('table.waitTime')}</TableHead>
@@ -341,7 +340,7 @@ const ToAnalyzePage: React.FC = () => {
                 <div className="space-y-2"><p className="text-sm text-muted-foreground">{t('table.patient')}</p><p className="font-medium">{selectedCase.patientName}</p><p className="text-sm text-muted-foreground">{selectedCase.patientId}</p></div>
                 <div className="space-y-2"><p className="text-sm text-muted-foreground">{t('table.pathology')}</p>{getPathologyBadge(selectedCase.pathology)}</div>
                 <div className="space-y-2"><p className="text-sm text-muted-foreground">{t('table.center')}</p><p className="font-medium">{selectedCase.center}</p></div>
-                <div className="space-y-2"><p className="text-sm text-muted-foreground">{t('table.priority')}</p>{getPriorityBadge(selectedCase.priority)}</div>
+                <div className="space-y-2"><p className="text-sm text-muted-foreground">Priorité</p>{getPriorityBadge(selectedCase.priority)}</div>
                 <div className="space-y-2"><p className="text-sm text-muted-foreground">{t('table.submittedBy')}</p><p className="font-medium">{selectedCase.submittedBy}</p></div>
                 <div className="space-y-2"><p className="text-sm text-muted-foreground">{t('table.submittedAt')}</p><p className="font-medium">{selectedCase.submittedAt}</p></div>
               </div>
@@ -414,7 +413,8 @@ const ToAnalyzePage: React.FC = () => {
                 
                 {viewMode === 'live' ? (
                   <div className="w-full h-full max-w-4xl max-h-[600px]">
-                  <MicroscopeLiveView roomId={selectedCase?.id || 'salle-attente'} isViewer={true} />
+                  {/* CORRECTION : L'erreur rouge est partie, on l'appelle proprement */}
+                  <MicroscopeLiveView />
                   </div>
                 ) : (
                   <div className="transition-transform duration-200" style={{ transform: `scale(${zoomLevel / 100})` }}>
