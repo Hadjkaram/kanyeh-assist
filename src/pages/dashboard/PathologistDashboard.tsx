@@ -13,19 +13,12 @@ import {
   CheckCircle,
   Clock,
   Users,
-  FileText,
   AlertCircle,
   ArrowRight,
-  Loader2
+  Loader2,
+  FileText // <-- CORRECTION : L'icône manquante est ajoutée ici !
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-
-// On garde les données fictives UNIQUEMENT pour la section "Second Avis" 
-// (en attendant d'avoir une table Supabase dédiée à ça plus tard)
-const secondOpinionRequests = [
-  { id: 'SO-001', caseId: 'KA-2026-010', from: 'Dr. Konan', center: 'CHU Bouaké', date: '2026-03-16' },
-  { id: 'SO-002', caseId: 'KA-2026-008', from: 'Dr. Bamba', center: 'CS San-Pedro', date: '2026-03-15' },
-];
 
 const PathologistDashboard: React.FC = () => {
   const { t } = useLanguage();
@@ -35,6 +28,7 @@ const PathologistDashboard: React.FC = () => {
   // États pour stocker les VRAIES données
   const [pendingCases, setPendingCases] = useState<any[]>([]);
   const [validatedCases, setValidatedCases] = useState<any[]>([]);
+  const [secondOpinions, setSecondOpinions] = useState<any[]>([]); 
   const [stats, setStats] = useState({ toAnalyze: 0, urgent: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -60,10 +54,21 @@ const PathologistDashboard: React.FC = () => {
         .order('created_at', { ascending: false })
         .limit(5);
 
+      // 3. On récupère les demandes de SECOND AVIS
+      const { data: opinionsData } = await supabase
+        .from('second_opinions')
+        .select('*')
+        .eq('requested_to', user?.id)
+        .eq('status', 'pending');
+
+      if (opinionsData) {
+        setSecondOpinions(opinionsData);
+      }
+
       if (!pendingError && pendingData) {
         setPendingCases(pendingData);
         
-        // On compte les vraies statistiques globales (pourrait nécessiter une requête count() pour être exact si > 5)
+        // On compte les vraies statistiques globales
         const { count: totalPending } = await supabase.from('cases').select('*', { count: 'exact', head: true }).eq('status', 'pending');
         const { count: totalUrgent } = await supabase.from('cases').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('priority', 'urgent');
         
@@ -74,9 +79,9 @@ const PathologistDashboard: React.FC = () => {
       }
 
       if (validatedData) {
-        // On formate les données validées pour qu'elles collent au format attendu par le composant RecentCasesTable
+        // On formate les données validées
         const formattedValidated = validatedData.map(c => ({
-          id: c.case_reference,
+          id: c.case_reference || c.id,
           patientId: c.patient_id || 'N/A',
           patientName: c.patient_name,
           pathology: c.pathology,
@@ -91,7 +96,7 @@ const PathologistDashboard: React.FC = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [user]);
 
   return (
     <div className="space-y-6">
@@ -123,7 +128,7 @@ const PathologistDashboard: React.FC = () => {
         />
         <StatCard
           title={t('stats.analyzedToday')}
-          value={validatedCases.length} // Affichera le nombre d'analyses récentes
+          value={validatedCases.length} 
           icon={CheckCircle}
           iconColor="text-success"
         />
@@ -135,7 +140,7 @@ const PathologistDashboard: React.FC = () => {
         />
         <StatCard
           title={t('stats.secondOpinions')}
-          value={secondOpinionRequests.length}
+          value={secondOpinions.length}
           icon={Users}
           iconColor="text-warning"
         />
@@ -172,7 +177,7 @@ const PathologistDashboard: React.FC = () => {
                     <div className={`w-2 h-full min-h-[40px] rounded-full ${caseItem.priority === 'urgent' ? 'bg-destructive' : caseItem.priority === 'high' ? 'bg-warning' : 'bg-primary'}`} />
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-medium">{caseItem.case_reference}</span>
+                        <span className="font-mono text-sm font-medium">{caseItem.case_reference || caseItem.id.substring(0,8)}</span>
                         {(caseItem.priority === 'urgent' || caseItem.priority === 'high') && (
                           <Badge variant={caseItem.priority === 'urgent' ? 'destructive' : 'outline'} className={caseItem.priority === 'high' ? 'border-warning text-warning text-xs' : 'text-xs'}>
                             {caseItem.priority.toUpperCase()}
@@ -198,12 +203,12 @@ const PathologistDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* AI Analysis Panel (DESIGN ORIGINAL GARDÉ) */}
+        {/* AI Analysis Panel */}
         <AIAnalysisPanel />
       </div>
 
-      {/* Second Opinion Requests & Image Viewer Placeholder */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Second Opinion Requests (VRAIES DONNÉES) */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -212,26 +217,32 @@ const PathologistDashboard: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {secondOpinionRequests.map((request) => (
-              <div 
-                key={request.id}
-                className="p-4 bg-warning/10 border border-warning/20 rounded-lg"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm font-medium">{request.caseId}</span>
-                  <Badge variant="outline" className="text-warning border-warning text-xs">
-                    {t('status.pending')}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {t('dashboard.pathologist.requestFrom')} {request.from}
-                </p>
-                <p className="text-xs text-muted-foreground">{request.center}</p>
-                <Button size="sm" className="w-full mt-3">
-                  {t('action.review')}
-                </Button>
+            {secondOpinions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+                Aucune demande de second avis.
               </div>
-            ))}
+            ) : (
+              secondOpinions.map((request) => (
+                <div 
+                  key={request.id}
+                  className="p-4 bg-warning/10 border border-warning/20 rounded-lg"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-sm font-medium">{request.case_id || request.id.substring(0,8)}</span>
+                    <Badge variant="outline" className="text-warning border-warning text-xs">
+                      {t('status.pending')}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {t('dashboard.pathologist.requestFrom')} {request.requested_by_name || 'Un confrère'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{request.center || '-'}</p>
+                  <Button size="sm" className="w-full mt-3" onClick={() => navigate('/dashboard/second-opinion')}>
+                    {t('action.review')}
+                  </Button>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -262,13 +273,7 @@ const PathologistDashboard: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <RecentCasesTable 
-            cases={validatedCases.length > 0 ? validatedCases : [
-              // Fallback visuel si aucun dossier n'a encore été analysé/validé dans Supabase
-              { id: 'En attente', patientId: '-', patientName: 'Aucun historique', pathology: 'breast' as const, status: 'validated' as const, createdAt: '-', center: '-' }
-            ]} 
-            showCenter 
-          />
+          <RecentCasesTable cases={validatedCases} showCenter />
         </CardContent>
       </Card>
     </div>
