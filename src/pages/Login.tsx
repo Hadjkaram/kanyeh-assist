@@ -29,26 +29,31 @@ const Login: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<string>('patient');
   const [center, setCenter] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // SOLUTION DOUBLE CLIC : Redirection automatique dès que l'auth est confirmée
+  // REDIRECTION AUTOMATIQUE (Fermeture de l'onglet, etc.)
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/dashboard');
+    if (!isLoading && isAuthenticated) {
+      navigate('/dashboard', { replace: true }); // replace: true empêche de faire "retour" pour revenir au login !
     }
-  }, [isAuthenticated, navigate]);
+  }, [isLoading, isAuthenticated, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       await login(email, password);
-      // Le navigate('/dashboard') a été supprimé ici car le useEffect s'en charge !
+      // Le useEffect ci-dessus s'occupera de faire la redirection au tableau de bord.
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       await register(email, password, fullName, role as UserRole | 'patient', center);
       setEmail('');
@@ -56,8 +61,19 @@ const Login: React.FC = () => {
       setFullName('');
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  // BOUCLIER : On ne montre le formulaire que si on est sûr que l'utilisateur n'est pas déjà connecté
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
+        <Loader2 className="h-10 w-10 text-primary animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center p-4">
@@ -120,8 +136,8 @@ const Login: React.FC = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full mt-6" disabled={isLoading}>
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Se connecter"}
+                <Button type="submit" className="w-full mt-6" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Se connecter"}
                 </Button>
               </form>
             </TabsContent>
@@ -194,8 +210,8 @@ const Login: React.FC = () => {
                   />
                 </div>
 
-                <Button type="submit" className="w-full mt-6 bg-success hover:bg-success/90 text-white" disabled={isLoading}>
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Créer mon compte"}
+                <Button type="submit" className="w-full mt-6 bg-success hover:bg-success/90 text-white" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Créer mon compte"}
                 </Button>
               </form>
             </TabsContent>

@@ -19,7 +19,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fonction pour récupérer les infos du profil (nom, rôle, hôpital)
   const fetchUserProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -55,59 +54,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // SOLUTION RAFRAÎCHISSEMENT : On attend intelligemment la session initiale
-    const initializeAuth = async () => {
-      setIsLoading(true);
+    let mounted = true;
+
+    // VÉRIFICATION DE LA MÉMOIRE DU NAVIGATEUR (Fermeture d'onglet, actualisation)
+    const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        if (session && mounted) {
           await fetchUserProfile(session.user.id);
-        } else {
-          setIsLoading(false);
+        } else if (mounted) {
+          setIsLoading(false); // Aucun utilisateur trouvé en mémoire
         }
       } catch (error) {
         console.error("Erreur d'initialisation de session", error);
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
 
-    initializeAuth();
+    initSession();
 
-    // On écoute les changements (déconnexion en temps réel)
+    // ÉCOUTEUR EN TEMPS RÉEL (Déconnexion, expiration)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (_event === 'SIGNED_IN' && session) {
+      if (_event === 'SIGNED_OUT' || !session) {
+        if (mounted) {
+          setUser(null);
+          setIsAuthenticated(false);
+          setIsLoading(false);
+        }
+      } else if (session && mounted) {
         await fetchUserProfile(session.user.id);
-      } else if (_event === 'SIGNED_OUT') {
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // La vraie fonction de Connexion
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      
-      // SOLUTION DOUBLE CLIC : On attend de charger le profil ICI avant de valider la fonction !
-      if (data.user) {
-        await fetchUserProfile(data.user.id);
-      }
       toast.success('Connexion réussie');
     } catch (error: any) {
       toast.error('Identifiants incorrects');
-      setIsLoading(false);
       throw error;
     }
   };
 
   const register = async (email: string, password: string, fullName: string, role: UserRole | 'patient', center?: string) => {
-    setIsLoading(true);
     try {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
@@ -130,22 +128,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toast.success('Inscription réussie ! Vous pouvez maintenant vous connecter.');
     } catch (error: any) {
       toast.error(error.message || "Erreur lors de l'inscription");
-      setIsLoading(false);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const logout = async () => {
-    setIsLoading(true);
+    setIsLoading(true); // On bloque l'interface pendant la déconnexion
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       toast.success('Déconnexion réussie');
     } catch (error: any) {
       toast.error('Erreur lors de la déconnexion');
-    } finally {
       setIsLoading(false);
     }
   };
