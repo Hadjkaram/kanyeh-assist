@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Camera, CheckCircle, XCircle, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface QualityMetric {
   name: string;
@@ -25,56 +26,55 @@ const ImageQualityChecker: React.FC<ImageQualityCheckerProps> = ({ imageUrl, onQ
   const [metrics, setMetrics] = useState<QualityMetric[]>([]);
   const [overallScore, setOverallScore] = useState(0);
 
+  // LA VRAIE FONCTION CONNECTÉE AU SERVEUR PYTHON
   const runQualityCheck = async () => {
+    if (!imageUrl) {
+      toast.error("Aucune image détectée pour le contrôle qualité.");
+      return;
+    }
+
     setIsChecking(true);
     setCheckComplete(false);
 
-    // Simulate quality check
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const formData = new FormData();
+      formData.append("file", blob, "quality-check.jpg");
 
-    // Mock quality metrics
-    const mockMetrics: QualityMetric[] = [
-      {
-        name: t('quality.sharpness'),
-        score: 92,
-        status: 'good',
-        message: t('quality.sharpnessGood'),
-      },
-      {
-        name: t('quality.lighting'),
-        score: 85,
-        status: 'good',
-        message: t('quality.lightingGood'),
-      },
-      {
-        name: t('quality.focus'),
-        score: 78,
-        status: 'warning',
-        message: t('quality.focusWarning'),
-      },
-      {
-        name: t('quality.contrast'),
-        score: 88,
-        status: 'good',
-        message: t('quality.contrastGood'),
-      },
-      {
-        name: t('quality.artifacts'),
-        score: 95,
-        status: 'good',
-        message: t('quality.artifactsGood'),
-      },
-    ];
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-    const avgScore = Math.round(mockMetrics.reduce((acc, m) => acc + m.score, 0) / mockMetrics.length);
-    
-    setMetrics(mockMetrics);
-    setOverallScore(avgScore);
-    setIsChecking(false);
-    setCheckComplete(true);
-    
-    const passed = avgScore >= 80 && !mockMetrics.some(m => m.status === 'error');
-    onQualityCheck?.(passed, mockMetrics);
+      // Appel à la route de vérification de qualité du serveur Python
+      const aiResponse = await fetch(`${apiUrl}/check-quality`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!aiResponse.ok) {
+        throw new Error("Erreur de connexion au serveur de vérification de qualité.");
+      }
+
+      const data = await aiResponse.json();
+      
+      // On s'attend à ce que le backend Python renvoie un tableau de métriques et un score global
+      const fetchedMetrics: QualityMetric[] = data.metrics || [];
+      const avgScore = data.overall_score || Math.round(fetchedMetrics.reduce((acc, m) => acc + m.score, 0) / (fetchedMetrics.length || 1));
+      
+      setMetrics(fetchedMetrics);
+      setOverallScore(avgScore);
+      setCheckComplete(true);
+      
+      const passed = avgScore >= 80 && !fetchedMetrics.some(m => m.status === 'error');
+      onQualityCheck?.(passed, fetchedMetrics);
+      
+      toast.success("Contrôle de qualité terminé.");
+
+    } catch (error: any) {
+      console.error("Erreur de contrôle de qualité:", error);
+      toast.error(error.message || "Le contrôle de qualité a échoué.");
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -127,13 +127,14 @@ const ImageQualityChecker: React.FC<ImageQualityCheckerProps> = ({ imageUrl, onQ
         {isChecking && (
           <div className="text-center py-8">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary mb-3" />
-            <p className="text-sm text-muted-foreground">{t('quality.checking')}</p>
+            <p className="text-sm text-muted-foreground text-primary animate-pulse">
+              Transfert vers le serveur qualité...
+            </p>
           </div>
         )}
 
         {checkComplete && (
           <div className="space-y-4">
-            {/* Overall Score */}
             <div className="text-center p-4 rounded-lg bg-muted/50">
               <div className={`text-4xl font-bold ${getScoreColor(overallScore)}`}>
                 {overallScore}%
@@ -143,7 +144,6 @@ const ImageQualityChecker: React.FC<ImageQualityCheckerProps> = ({ imageUrl, onQ
               </Badge>
             </div>
 
-            {/* Individual Metrics */}
             <div className="space-y-3">
               {metrics.map((metric, index) => (
                 <div key={index} className="space-y-1">
@@ -167,13 +167,12 @@ const ImageQualityChecker: React.FC<ImageQualityCheckerProps> = ({ imageUrl, onQ
               ))}
             </div>
 
-            {/* Recommendations */}
             {metrics.some(m => m.status !== 'good') && (
-              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                <p className="text-sm font-medium text-amber-800 mb-1">
                   {t('quality.recommendations')}
                 </p>
-                <ul className="text-xs text-amber-600 dark:text-amber-400 list-disc list-inside space-y-1">
+                <ul className="text-xs text-amber-600 list-disc list-inside space-y-1">
                   {metrics
                     .filter(m => m.status !== 'good')
                     .map((m, i) => (

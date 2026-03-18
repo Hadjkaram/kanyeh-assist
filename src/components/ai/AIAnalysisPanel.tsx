@@ -30,12 +30,11 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [detectedRegions, setDetectedRegions] = useState<DetectedRegion[]>([]);
 
-  // La VRAIE fonction d'analyse connectée au serveur Python
+  // LA VRAIE FONCTION D'ANALYSE CONNECTÉE AU SERVEUR PYTHON
   const runAnalysis = async () => {
-    // 1. VÉRIFICATION STRICTE : Y a-t-il une image ?
     if (!imageUrl) {
       toast.error("Aucune image détectée. Veuillez d'abord sélectionner une image de la lame.");
-      return; // On arrête tout ici, on n'appelle même pas le Python !
+      return;
     }
 
     setIsAnalyzing(true);
@@ -43,6 +42,7 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
     setAnalysisComplete(false);
 
     try {
+      // 1. On récupère le fichier image depuis l'URL locale ou distante
       const response = await fetch(imageUrl);
       const blob = await response.blob();
       setProgress(40);
@@ -50,15 +50,19 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
       const formData = new FormData();
       formData.append("file", blob, "capture-lame.jpg");
 
-      const aiResponse = await fetch("http://localhost:8000/analyze-slide", {
+      // RÉCUPÉRATION DE L'URL DE L'API (Gère le local ET la production)
+      // Si la variable VITE_API_URL n'est pas définie sur Vercel, on tente localhost par défaut
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+      // 2. On envoie l'image au VRAI serveur Python
+      const aiResponse = await fetch(`${apiUrl}/analyze-slide`, {
         method: "POST",
         body: formData,
       });
 
       if (!aiResponse.ok) {
-        // Si le Python renvoie une erreur (ex: image illisible)
-        const errorData = await aiResponse.json();
-        throw new Error(errorData.detail || "Erreur d'analyse IA");
+        const errorData = await aiResponse.json().catch(() => null);
+        throw new Error(errorData?.detail || "Erreur lors de la communication avec le serveur IA.");
       }
 
       setProgress(80);
@@ -78,6 +82,8 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
         
         setDetectedRegions(mappedRegions);
         if (onAnalysisComplete) onAnalysisComplete(mappedRegions);
+      } else {
+        throw new Error("Le serveur Python a renvoyé un statut d'échec.");
       }
 
       setProgress(100);
@@ -102,7 +108,6 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
         </CardTitle>
       </CardHeader>
       <CardContent className="p-4 space-y-6">
-        {/* État initial ou en cours */}
         {!analysisComplete && (
           <div className="text-center py-6 space-y-4">
             <div className="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center mb-2">
@@ -116,7 +121,7 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
             {isAnalyzing ? (
               <div className="space-y-2">
                 <p className="text-sm font-medium animate-pulse text-primary">
-                  L'IA Python analyse la lame...
+                  Analyse par le serveur distant en cours...
                 </p>
                 <Progress value={progress} className="h-2" />
               </div>
@@ -127,14 +132,13 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
                 </p>
                 <Button onClick={runAnalysis} className="w-full gap-2">
                   <Brain className="h-4 w-4" />
-                  Lancer la VRAIE analyse IA
+                  Lancer l'analyse IA
                 </Button>
               </div>
             )}
           </div>
         )}
 
-        {/* Résultats de l'analyse */}
         {analysisComplete && (
           <div className="space-y-6 animate-fade-in-up">
             <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg border border-success/20">

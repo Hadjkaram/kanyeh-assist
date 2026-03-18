@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import {
   Users,
   FileText,
@@ -16,36 +18,38 @@ import {
   Eye,
   Download,
   ExternalLink,
-  Loader2
+  Loader2,
+  Stethoscope
 } from 'lucide-react';
 
 const ClinicianDashboard: React.FC = () => {
   const { t } = useLanguage();
   const { user } = useAuth();
   
-  // NOUVEAU : État pour les vraies données
   const [patients, setPatients] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, validated: 0, pending: 0 });
+  
+  // NOUVEAU : État pour le rapport sélectionné
+  const [selectedReport, setSelectedReport] = useState<any | null>(null);
 
-  // NOUVEAU : Récupération depuis Supabase
   useEffect(() => {
     const fetchPatients = async () => {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('cases')
         .select('*')
-        // On pourrait filtrer par l'hôpital du clinicien ici
         .order('created_at', { ascending: false });
 
       if (!error && data) {
         const formatted = data.map(c => ({
           id: c.patient_id || 'N/A',
           name: c.patient_name,
-          caseId: c.case_reference,
+          caseId: c.case_reference || c.id.substring(0,8),
           pathology: c.pathology,
           status: c.status,
-          result: c.diagnosis, // Le résultat vient de l'analyse du pathologiste
+          result: c.diagnosis,
+          notes: c.analysis_notes, // On récupère les notes du pathologiste !
           date: new Date(c.created_at).toLocaleDateString('fr-FR')
         }));
         setPatients(formatted);
@@ -75,6 +79,46 @@ const ClinicianDashboard: React.FC = () => {
     }
   };
 
+  // NOUVEAU : Fonction de téléchargement de rapport
+  const handleDownloadPDF = (patient: any) => {
+    toast.success(`Génération du document pour ${patient.name}...`);
+    
+    setTimeout(() => {
+      // Création d'un faux fichier texte/PDF pour la démo
+      const content = `
+===================================================
+      RAPPORT D'ANALYSE ANATOMOPATHOLOGIQUE
+===================================================
+
+INFORMATIONS PATIENT:
+- Nom : ${patient.name}
+- ID CMU : ${patient.id}
+- N° Dossier : ${patient.caseId}
+- Date : ${patient.date}
+
+ANALYSE DEMANDÉE:
+${patient.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'Utérus'}
+
+CONCLUSION DU DIAGNOSTIC:
+${patient.result || 'En attente'}
+
+NOTES DU PATHOLOGISTE:
+${patient.notes || 'Aucune note supplémentaire.'}
+
+===================================================
+Généré par KANYEH ASSIST - Portail Sécurisé
+===================================================
+      `;
+      
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Rapport_Medical_${patient.caseId}.txt`;
+      link.click();
+      toast.success('Document téléchargé avec succès !');
+    }, 1500);
+  };
+
   return (
     <div className="space-y-6">
       {/* Welcome Header */}
@@ -87,7 +131,6 @@ const ClinicianDashboard: React.FC = () => {
         </p>
       </div>
 
-      {/* Integration Notice (GARDÉ INTACT) */}
       <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20">
         <CardContent className="p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -105,32 +148,10 @@ const ClinicianDashboard: React.FC = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title={t('stats.myPatients')}
-          value={stats.total}
-          icon={Users}
-          iconColor="text-primary"
-        />
-        <StatCard
-          title={t('stats.resultsAvailable')}
-          value={stats.validated}
-          icon={FileText}
-          iconColor="text-success"
-        />
-        <StatCard
-          title={t('stats.awaitingResults')}
-          value={stats.pending}
-          icon={Clock}
-          iconColor="text-warning"
-        />
-        <StatCard
-          title={t('stats.avgWaitTime')}
-          value="Temps Réel"
-          change={-20}
-          changeLabel={t('stats.faster')}
-          icon={CheckCircle}
-          iconColor="text-accent"
-        />
+        <StatCard title={t('stats.myPatients')} value={stats.total} icon={Users} iconColor="text-primary" />
+        <StatCard title={t('stats.resultsAvailable')} value={stats.validated} icon={FileText} iconColor="text-success" />
+        <StatCard title={t('stats.awaitingResults')} value={stats.pending} icon={Clock} iconColor="text-warning" />
+        <StatCard title={t('stats.avgWaitTime')} value="Temps Réel" change={-20} changeLabel={t('stats.faster')} icon={CheckCircle} iconColor="text-accent" />
       </div>
 
       {/* Patients List */}
@@ -148,10 +169,7 @@ const ClinicianDashboard: React.FC = () => {
              <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">Aucun dossier patient trouvé.</div>
           ) : (
             patients.map((patient, index) => (
-              <div 
-                key={index}
-                className="p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
-              >
+              <div key={index} className="p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -169,18 +187,18 @@ const ClinicianDashboard: React.FC = () => {
                     </div>
                     {patient.result && (
                       <p className="text-sm font-medium text-foreground mt-2 p-2 bg-background rounded border">
-                        {patient.result}
+                        Diagnostiqué : {patient.result}
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
                     {patient.status === 'validated' && (
                       <>
-                        <Button variant="outline" size="sm" className="gap-2">
+                        <Button variant="outline" size="sm" className="gap-2" onClick={() => setSelectedReport(patient)}>
                           <Eye className="h-4 w-4" />
                           {t('action.viewReport')}
                         </Button>
-                        <Button variant="outline" size="sm" className="gap-2">
+                        <Button variant="outline" size="sm" className="gap-2" onClick={() => handleDownloadPDF(patient)}>
                           <Download className="h-4 w-4" />
                           PDF
                         </Button>
@@ -205,14 +223,11 @@ const ClinicianDashboard: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* AI Assistant & Stats (GARDÉ INTACT) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* AI Assistant Chat */}
         <div className="h-[400px]">
           <AIAssistantChat />
         </div>
 
-        {/* Pathology Distribution */}
         <Card>
           <CardHeader>
             <CardTitle>{t('dashboard.clinician.pathologyDistribution')}</CardTitle>
@@ -220,26 +235,19 @@ const ClinicianDashboard: React.FC = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-accent" />
-                  {t('pathology.breast')}
-                </span>
+                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-accent" />{t('pathology.breast')}</span>
                 <span className="font-medium">14 {t('stats.patients')}</span>
               </div>
               <Progress value={58} className="h-3 [&>div]:bg-accent" />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-primary" />
-                  {t('pathology.cervical')}
-                </span>
+                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-primary" />{t('pathology.cervical')}</span>
                 <span className="font-medium">10 {t('stats.patients')}</span>
               </div>
               <Progress value={42} className="h-3" />
             </div>
 
-            {/* Response Time Summary */}
             <div className="pt-4 border-t mt-4">
               <h4 className="text-sm font-medium mb-3">{t('dashboard.clinician.responseTime')}</h4>
               <div className="grid grid-cols-2 gap-3">
@@ -256,6 +264,63 @@ const ClinicianDashboard: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* NOUVEAU : Modal pour lire le rapport en plein écran */}
+      <Dialog open={!!selectedReport} onOpenChange={() => setSelectedReport(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Stethoscope className="h-5 w-5 text-primary" />
+              Rapport Médical - {selectedReport?.name}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedReport && (
+            <div className="space-y-6 mt-4">
+              <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg border">
+                <div>
+                  <p className="text-xs text-muted-foreground">ID Patient</p>
+                  <p className="font-medium">{selectedReport.id}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Dossier</p>
+                  <p className="font-mono">{selectedReport.caseId}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Date d'analyse</p>
+                  <p className="font-medium">{selectedReport.date}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Pathologie</p>
+                  <p className="font-medium">{selectedReport.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'Utérus'}</p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold uppercase text-muted-foreground border-b pb-2 mb-3">Diagnostic Confirmé</h3>
+                <div className="p-4 bg-primary/5 text-primary border border-primary/20 rounded-lg font-medium text-lg">
+                  {selectedReport.result}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold uppercase text-muted-foreground border-b pb-2 mb-3">Notes Cliniques du Pathologiste</h3>
+                <div className="p-4 bg-muted/50 rounded-lg whitespace-pre-wrap text-sm">
+                  {selectedReport.notes || "Aucune note additionnelle n'a été fournie par le pathologiste."}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button variant="outline" onClick={() => setSelectedReport(null)}>Fermer</Button>
+                <Button onClick={() => handleDownloadPDF(selectedReport)} className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Télécharger le document
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
