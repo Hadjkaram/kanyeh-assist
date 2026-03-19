@@ -31,6 +31,7 @@ import { Progress } from '@/components/ui/progress';
 import StatCard from '@/components/dashboard/StatCard';
 import AIAnalysisPanel from '@/components/ai/AIAnalysisPanel';
 import MicroscopeLiveView from '@/components/ai/MicroscopeLiveView';
+import AnnotationOverlay from '@/components/ai/AnnotationOverlay'; // <--- NOUVEL IMPORT ICI
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
@@ -57,6 +58,18 @@ import {
   Loader2
 } from 'lucide-react';
 
+// NOUVEAU : Re-définition du type DetectedRegion localement pour cet usage
+interface DetectedRegion {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  classification: 'suspicious' | 'benign' | 'malignant';
+  description: string;
+}
+
 interface CaseToAnalyze {
   id: string;
   caseReference?: string;
@@ -70,7 +83,7 @@ interface CaseToAnalyze {
   imagesCount: number;
   waitTime: string;
   status: 'pending' | 'analyzing';
-  imageUrl?: string; // NOUVEAU : On prépare la boîte pour l'image
+  imageUrl?: string;
 }
 
 const ToAnalyzePage: React.FC = () => {
@@ -88,6 +101,9 @@ const ToAnalyzePage: React.FC = () => {
   const [diagnosis, setDiagnosis] = useState<string>('');
   
   const [viewMode, setViewMode] = useState<'static' | 'live'>('static');
+
+  // NOUVEL ÉTAT pour stocker les régions détectées par l'IA au niveau de la page
+  const [aiDetectedRegions, setAiDetectedRegions] = useState<DetectedRegion[]>([]);
 
   const [realCases, setRealCases] = useState<CaseToAnalyze[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -117,7 +133,7 @@ const ToAnalyzePage: React.FC = () => {
           imagesCount: d.images_count || 0,
           waitTime: 'En attente', 
           status: d.status,
-          imageUrl: d.image_url // NOUVEAU : On récupère la vraie image depuis la BDD
+          imageUrl: d.image_url 
         })) as CaseToAnalyze[];
         
         setRealCases(formattedData);
@@ -175,6 +191,11 @@ const ToAnalyzePage: React.FC = () => {
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 25, 50));
   const handleResetZoom = () => setZoomLevel(100);
 
+  // Fonction de rappel quand l'analyse IA est terminée
+  const handleAIAnalysisComplete = (regions: DetectedRegion[]) => {
+    setAiDetectedRegions(regions);
+  };
+
   const submitAnalysis = async () => {
     if (!selectedCase) return;
     
@@ -185,7 +206,8 @@ const ToAnalyzePage: React.FC = () => {
           status: 'validated',
           diagnosis: diagnosis,
           analysis_notes: analysisNotes,
-          validated_at: new Date().toISOString()
+          validated_at: new Date().toISOString(),
+          ai_analysis_results: aiDetectedRegions, // NOUVEAU : Envoi de TOUTES les données IA au clinicien !
         })
         .eq('id', selectedCase.id);
 
@@ -411,20 +433,21 @@ const ToAnalyzePage: React.FC = () => {
                 </div>
               </div>
               
-              <div className="flex-1 bg-muted/30 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center overflow-auto p-4">
+              <div className="flex-1 bg-muted/30 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center overflow-auto">
                 
                 {viewMode === 'live' ? (
                   <div className="w-full h-full max-w-4xl max-h-[600px]">
                   <MicroscopeLiveView />
                   </div>
                 ) : (
-                  <div className="transition-transform duration-200 w-full h-full flex items-center justify-center" style={{ transform: `scale(${zoomLevel / 100})` }}>
-                    {/* NOUVEAU : Affichage de la VRAIE image si elle existe */}
+                  <div className="w-full h-full flex items-center justify-center overflow-auto p-4">
+                    {/* NOUVEAU : On remplace l'image simple par le visualiseur intelligent */}
                     {selectedCase?.imageUrl ? (
-                      <img 
-                        src={selectedCase.imageUrl} 
-                        alt={`Prélèvement ${selectedCase.patientName}`} 
-                        className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                      <AnnotationOverlay
+                        imageUrl={selectedCase.imageUrl}
+                        detectedRegions={aiDetectedRegions} // <--- On lui donne les cercles IA !
+                        zoomLevel={zoomLevel}
+                        patientName={selectedCase.patientName}
                       />
                     ) : (
                       <div className="w-[600px] h-[400px] bg-gradient-to-br from-muted to-muted/50 rounded-lg flex items-center justify-center">
@@ -461,7 +484,6 @@ const ToAnalyzePage: React.FC = () => {
                   <TabsTrigger value="diagnosis" className="gap-1"><FileText className="h-3 w-3" />{t('dashboard.toAnalyze.diagnosis')}</TabsTrigger>
                   <TabsTrigger value="ai" className="gap-1 relative group">
                     <Brain className="h-3 w-3" /> IA
-                    {!isHumanDiagnosisComplete && <Lock className="h-3 w-3 ml-1 text-muted-foreground" />}
                   </TabsTrigger>
                 </TabsList>
                 
@@ -504,27 +526,20 @@ const ToAnalyzePage: React.FC = () => {
                 </TabsContent>
 
                 <TabsContent value="ai" className="mt-4">
-                  {!isHumanDiagnosisComplete ? (
-                    <div className="flex flex-col items-center justify-center p-8 text-center border-2 border-dashed border-muted rounded-lg space-y-4 bg-muted/10">
-                      <div className="p-3 bg-muted rounded-full"><Lock className="h-8 w-8 text-muted-foreground" /></div>
-                      <p className="text-sm text-muted-foreground font-medium">Intelligence Artificielle verrouillée</p>
-                      <p className="text-xs text-muted-foreground">Saisissez d'abord votre diagnostic pour obtenir l'avis de l'IA.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4 animate-fade-in">
-                      <div className="p-2 bg-success/10 text-success text-xs rounded-md border border-success/20 flex items-center gap-2">
-                        <CheckCircle className="h-3 w-3" /> L'IA a accès à votre diagnostic pour affiner son analyse.
-                      </div>
-                      {/* NOUVEAU : On donne la VRAIE image à ton algorithme d'IA */}
-                      <AIAnalysisPanel imageUrl={selectedCase?.imageUrl} />
-                    </div>
-                  )}
+                  <div className="space-y-4 animate-fade-in">
+                    {/* NOUVEAU : On connecte le panneau IA au rappel ! */}
+                    <AIAnalysisPanel 
+                      imageUrl={selectedCase?.imageUrl} 
+                      onAnalysisComplete={handleAIAnalysisComplete} // <--- CA PERMET D'ENTOURER !
+                    />
+                  </div>
                 </TabsContent>
 
               </Tabs>
               
               <div className="pt-4 border-t space-y-2">
-                <Button className="w-full gap-2" onClick={submitAnalysis} disabled={!isHumanDiagnosisComplete}>
+                {/* NOUVEAU : Bouton déverrouillé et qui envoie TOUT */}
+                <Button className="w-full gap-2" onClick={submitAnalysis}>
                   <CheckCircle className="h-4 w-4" /> {t('action.submitAnalysis')}
                 </Button>
                 <Button variant="outline" className="w-full" onClick={() => setIsAnalysisMode(false)}>
