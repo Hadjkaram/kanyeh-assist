@@ -19,7 +19,10 @@ import {
   Download,
   ExternalLink,
   Loader2,
-  Stethoscope
+  Stethoscope,
+  Printer,
+  Brain,
+  Target
 } from 'lucide-react';
 
 const ClinicianDashboard: React.FC = () => {
@@ -30,7 +33,6 @@ const ClinicianDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, validated: 0, pending: 0 });
   
-  // NOUVEAU : État pour le rapport sélectionné
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
 
   useEffect(() => {
@@ -49,8 +51,9 @@ const ClinicianDashboard: React.FC = () => {
           pathology: c.pathology,
           status: c.status,
           result: c.diagnosis,
-          notes: c.analysis_notes, // On récupère les notes du pathologiste !
-          date: new Date(c.created_at).toLocaleDateString('fr-FR')
+          notes: c.analysis_notes, 
+          date: new Date(c.created_at).toLocaleDateString('fr-FR'),
+          aiData: c.ai_analysis_results // NOUVEAU: On récupère les cadres de l'IA !
         }));
         setPatients(formatted);
         
@@ -79,50 +82,35 @@ const ClinicianDashboard: React.FC = () => {
     }
   };
 
-  // NOUVEAU : Fonction de téléchargement de rapport
-  const handleDownloadPDF = (patient: any) => {
-    toast.success(`Génération du document pour ${patient.name}...`);
-    
+  // NOUVEAU : Fonction de génération de vrai PDF via l'impression du navigateur
+  const handlePrintPDF = () => {
+    toast.success("Génération du rapport médical...");
     setTimeout(() => {
-      // Création d'un faux fichier texte/PDF pour la démo
-      const content = `
-===================================================
-      RAPPORT D'ANALYSE ANATOMOPATHOLOGIQUE
-===================================================
-
-INFORMATIONS PATIENT:
-- Nom : ${patient.name}
-- ID CMU : ${patient.id}
-- N° Dossier : ${patient.caseId}
-- Date : ${patient.date}
-
-ANALYSE DEMANDÉE:
-${patient.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'Utérus'}
-
-CONCLUSION DU DIAGNOSTIC:
-${patient.result || 'En attente'}
-
-NOTES DU PATHOLOGISTE:
-${patient.notes || 'Aucune note supplémentaire.'}
-
-===================================================
-Généré par KANYEH ASSIST - Portail Sécurisé
-===================================================
-      `;
-      
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `Rapport_Medical_${patient.caseId}.txt`;
-      link.click();
-      toast.success('Document téléchargé avec succès !');
-    }, 1500);
+      // Ouvre une fenêtre d'impression native (qui permet de Sauvegarder en PDF)
+      window.print();
+    }, 500);
   };
 
   return (
     <div className="space-y-6">
+      {/* Style spécial caché pour l'impression PDF */}
+      <style dangerouslySetContents={{__html: `
+        @media print {
+          body * { visibility: hidden; }
+          #printable-report, #printable-report * { visibility: visible; }
+          #printable-report { 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100%;
+            padding: 20mm;
+          }
+          .no-print { display: none !important; }
+        }
+      `}} />
+
       {/* Welcome Header */}
-      <div>
+      <div className="no-print">
         <h1 className="text-2xl font-display font-bold text-foreground">
           {t('dashboard.clinician.welcome')}, {user?.firstName}
         </h1>
@@ -131,7 +119,7 @@ Généré par KANYEH ASSIST - Portail Sécurisé
         </p>
       </div>
 
-      <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20">
+      <Card className="no-print bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20">
         <CardContent className="p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <ExternalLink className="h-5 w-5 text-primary" />
@@ -147,7 +135,7 @@ Généré par KANYEH ASSIST - Portail Sécurisé
       </Card>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title={t('stats.myPatients')} value={stats.total} icon={Users} iconColor="text-primary" />
         <StatCard title={t('stats.resultsAvailable')} value={stats.validated} icon={FileText} iconColor="text-success" />
         <StatCard title={t('stats.awaitingResults')} value={stats.pending} icon={Clock} iconColor="text-warning" />
@@ -155,7 +143,7 @@ Généré par KANYEH ASSIST - Portail Sécurisé
       </div>
 
       {/* Patients List */}
-      <Card>
+      <Card className="no-print">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
@@ -169,53 +157,51 @@ Généré par KANYEH ASSIST - Portail Sécurisé
              <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">Aucun dossier patient trouvé.</div>
           ) : (
             patients.map((patient, index) => (
-              <div key={index} className="p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{patient.name}</span>
-                      {getStatusBadge(patient.status)}
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>{patient.id}</span>
-                      <span>·</span>
-                      <span className="font-mono">{patient.caseId}</span>
-                      <span>·</span>
-                      <Badge variant="outline" className={patient.pathology === 'breast' ? 'border-accent text-accent' : 'border-primary text-primary'}>
-                        {patient.pathology === 'breast' ? t('pathology.breast') : t('pathology.cervical')}
-                      </Badge>
-                    </div>
-                    {patient.result && (
-                      <p className="text-sm font-medium text-foreground mt-2 p-2 bg-background rounded border">
-                        Diagnostiqué : {patient.result}
-                      </p>
-                    )}
-                  </div>
+              <div key={index} className="p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    {patient.status === 'validated' && (
-                      <>
-                        <Button variant="outline" size="sm" className="gap-2" onClick={() => setSelectedReport(patient)}>
-                          <Eye className="h-4 w-4" />
-                          {t('action.viewReport')}
-                        </Button>
-                        <Button variant="outline" size="sm" className="gap-2" onClick={() => handleDownloadPDF(patient)}>
-                          <Download className="h-4 w-4" />
-                          PDF
-                        </Button>
-                      </>
-                    )}
-                    {patient.status === 'analyzing' && (
-                      <div className="text-right">
-                        <p className="text-sm text-muted-foreground mb-1">{t('status.analyzing')}...</p>
-                        <Progress value={65} className="w-32 h-2" />
-                      </div>
-                    )}
-                    {patient.status === 'pending' && (
-                      <p className="text-sm text-muted-foreground">
-                        {t('dashboard.clinician.waitingForAnalysis')}
-                      </p>
-                    )}
+                    <span className="font-medium">{patient.name}</span>
+                    {getStatusBadge(patient.status)}
                   </div>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>{patient.id}</span>
+                    <span>·</span>
+                    <span className="font-mono">{patient.caseId}</span>
+                    <span>·</span>
+                    <Badge variant="outline" className={patient.pathology === 'breast' ? 'border-accent text-accent' : 'border-primary text-primary'}>
+                      {patient.pathology === 'breast' ? t('pathology.breast') : t('pathology.cervical')}
+                    </Badge>
+                  </div>
+                  {patient.result && (
+                    <p className="text-sm font-medium text-foreground mt-2 p-2 bg-background rounded border">
+                      Diagnostiqué : {patient.result}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {patient.status === 'validated' && (
+                    <>
+                      <Button variant="outline" size="sm" className="gap-2" onClick={() => setSelectedReport(patient)}>
+                        <Eye className="h-4 w-4" />
+                        {t('action.viewReport')}
+                      </Button>
+                      <Button onClick={() => { setSelectedReport(patient); setTimeout(handlePrintPDF, 300); }} size="sm" className="gap-2">
+                        <Download className="h-4 w-4" />
+                        PDF
+                      </Button>
+                    </>
+                  )}
+                  {patient.status === 'analyzing' && (
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground mb-1">{t('status.analyzing')}...</p>
+                      <Progress value={65} className="w-32 h-2" />
+                    </div>
+                  )}
+                  {patient.status === 'pending' && (
+                    <p className="text-sm text-muted-foreground">
+                      {t('dashboard.clinician.waitingForAnalysis')}
+                    </p>
+                  )}
                 </div>
               </div>
             ))
@@ -223,7 +209,7 @@ Généré par KANYEH ASSIST - Portail Sécurisé
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="no-print grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="h-[400px]">
           <AIAssistantChat />
         </div>
@@ -247,78 +233,101 @@ Généré par KANYEH ASSIST - Portail Sécurisé
               </div>
               <Progress value={42} className="h-3" />
             </div>
-
-            <div className="pt-4 border-t mt-4">
-              <h4 className="text-sm font-medium mb-3">{t('dashboard.clinician.responseTime')}</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-muted/50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-primary">4.2h</p>
-                  <p className="text-xs text-muted-foreground">Moyenne</p>
-                </div>
-                <div className="p-3 bg-muted/50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-success">2.1h</p>
-                  <p className="text-xs text-muted-foreground">Urgent</p>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* NOUVEAU : Modal pour lire le rapport en plein écran */}
+      {/* Modal pour lire le rapport en plein écran ET qui sera imprimé */}
       <Dialog open={!!selectedReport} onOpenChange={() => setSelectedReport(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Stethoscope className="h-5 w-5 text-primary" />
-              Rapport Médical - {selectedReport?.name}
-            </DialogTitle>
-          </DialogHeader>
-          
-          {selectedReport && (
-            <div className="space-y-6 mt-4">
-              <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg border">
-                <div>
-                  <p className="text-xs text-muted-foreground">ID Patient</p>
-                  <p className="font-medium">{selectedReport.id}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Dossier</p>
-                  <p className="font-mono">{selectedReport.caseId}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Date d'analyse</p>
-                  <p className="font-medium">{selectedReport.date}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Pathologie</p>
-                  <p className="font-medium">{selectedReport.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'Utérus'}</p>
-                </div>
-              </div>
-
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <div id="printable-report" className="space-y-8 p-4">
+            
+            <div className="flex items-center justify-between border-b-2 border-primary pb-4 mb-6">
               <div>
-                <h3 className="text-sm font-bold uppercase text-muted-foreground border-b pb-2 mb-3">Diagnostic Confirmé</h3>
-                <div className="p-4 bg-primary/5 text-primary border border-primary/20 rounded-lg font-medium text-lg">
-                  {selectedReport.result}
-                </div>
+                <h1 className="text-2xl font-bold text-primary tracking-tight">KANYEH ASSIST</h1>
+                <p className="text-sm font-medium text-muted-foreground">Rapport d'Analyse Anatomopathologique</p>
               </div>
-
-              <div>
-                <h3 className="text-sm font-bold uppercase text-muted-foreground border-b pb-2 mb-3">Notes Cliniques du Pathologiste</h3>
-                <div className="p-4 bg-muted/50 rounded-lg whitespace-pre-wrap text-sm">
-                  {selectedReport.notes || "Aucune note additionnelle n'a été fournie par le pathologiste."}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={() => setSelectedReport(null)}>Fermer</Button>
-                <Button onClick={() => handleDownloadPDF(selectedReport)} className="gap-2">
-                  <Download className="h-4 w-4" />
-                  Télécharger le document
-                </Button>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Document généré le {new Date().toLocaleDateString('fr-FR')}</p>
+                <p className="text-sm font-mono font-bold mt-1">REF: {selectedReport?.caseId}</p>
               </div>
             </div>
-          )}
+
+            {selectedReport && (
+              <>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-4 bg-muted/20 p-6 rounded-lg border border-border/50">
+                  <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Patient</p><p className="font-bold text-lg">{selectedReport.name}</p></div>
+                  <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">ID CMU</p><p className="font-medium">{selectedReport.id}</p></div>
+                  <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Pathologie examinée</p><p className="font-medium">{selectedReport.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'Utérus'}</p></div>
+                  <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Date d'analyse</p><p className="font-medium">{selectedReport.date}</p></div>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold uppercase text-primary border-b border-primary/20 pb-2">Diagnostic Confirmé par le Pathologiste</h3>
+                  <div className={`p-4 rounded-lg font-medium text-lg border ${
+                    selectedReport.result === 'normal' || selectedReport.result === 'benign' ? 'bg-success/10 text-success-foreground border-success/30' :
+                    selectedReport.result === 'suspicious' || selectedReport.result === 'atypical' ? 'bg-warning/10 text-warning-foreground border-warning/30' :
+                    'bg-destructive/10 text-destructive border-destructive/30'
+                  }`}>
+                    {selectedReport.result ? selectedReport.result.toUpperCase() : 'Non défini'}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold uppercase text-primary border-b border-primary/20 pb-2">Notes et Observations Cliniques</h3>
+                  <div className="p-5 bg-muted/40 rounded-lg whitespace-pre-wrap text-sm leading-relaxed border border-border/50">
+                    {selectedReport.notes || "Aucune note additionnelle n'a été fournie par le pathologiste."}
+                  </div>
+                </div>
+
+                {/* NOUVEAU : Section d'Analyse IA Intégrée */}
+                {selectedReport.aiData && selectedReport.aiData.length > 0 && (
+                  <div className="space-y-4 mt-8 pt-6 border-t-2 border-dashed border-border">
+                    <h3 className="text-sm font-bold uppercase flex items-center gap-2 text-accent">
+                      <Brain className="h-4 w-4" /> Analyse Complémentaire de l'IA Kanyeh
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      L'intelligence artificielle a détecté {selectedReport.aiData.length} région(s) d'intérêt lors du pré-screening.
+                    </p>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      {selectedReport.aiData.map((region: any, i: number) => (
+                        <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card text-sm">
+                          <Target className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className={
+                                region.classification === 'malignant' ? 'border-destructive text-destructive' :
+                                region.classification === 'suspicious' ? 'border-warning text-warning' : 'border-success text-success'
+                              }>
+                                Zone {region.classification}
+                              </Badge>
+                              <span className="text-xs font-mono text-muted-foreground">Fiabilité: {region.confidence}%</span>
+                            </div>
+                            <p className="text-muted-foreground">{region.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="mt-12 pt-4 border-t text-center text-xs text-muted-foreground">
+                  <p>Ce document est généré de manière sécurisée par la plateforme KANYEH ASSIST.</p>
+                  <p>Il est destiné à un usage médical strict et confidentiel.</p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Boutons cachés à l'impression */}
+          <div className="no-print flex justify-end gap-3 pt-6 border-t mt-4 bg-background">
+            <Button variant="outline" onClick={() => setSelectedReport(null)}>Fermer</Button>
+            <Button onClick={handlePrintPDF} className="gap-2">
+              <Printer className="h-4 w-4" />
+              Imprimer / Sauvegarder en PDF
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
