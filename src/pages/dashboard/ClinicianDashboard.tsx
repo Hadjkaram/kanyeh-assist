@@ -3,7 +3,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import StatCard from '@/components/dashboard/StatCard';
 import AIAssistantChat from '@/components/ai/AIAssistantChat';
-import AnnotationOverlay from '@/components/ai/AnnotationOverlay'; // NOUVEAU : On importe le visualiseur IA !
+import AnnotationOverlay from '@/components/ai/AnnotationOverlay'; 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +24,7 @@ import {
   Printer,
   Brain,
   Target,
-  Microscope // NOUVEAU
+  Microscope 
 } from 'lucide-react';
 
 const ClinicianDashboard: React.FC = () => {
@@ -37,16 +37,21 @@ const ClinicianDashboard: React.FC = () => {
   
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
 
+  // États pour les statistiques réelles de pathologies
+  const [pathologyStats, setPathologyStats] = useState({ breast: 0, cervical: 0, total: 0 });
+
   useEffect(() => {
-    const fetchPatients = async () => {
+    const fetchDashboardData = async () => {
       setIsLoading(true);
-      const { data, error } = await supabase
+
+      // 1. Récupérer les patients (limité pour l'affichage principal)
+      const { data: casesData, error: casesError } = await supabase
         .from('cases')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        const formatted = data.map(c => ({
+      if (!casesError && casesData) {
+        const formatted = casesData.map(c => ({
           id: c.patient_id || 'N/A',
           name: c.patient_name,
           caseId: c.case_reference || c.id.substring(0,8),
@@ -56,20 +61,38 @@ const ClinicianDashboard: React.FC = () => {
           notes: c.analysis_notes, 
           date: new Date(c.created_at).toLocaleDateString('fr-FR'),
           aiData: c.ai_analysis_results,
-          imageUrl: c.image_url // NOUVEAU : On récupère l'image depuis Supabase
+          imageUrl: c.image_url 
         }));
         setPatients(formatted);
         
         setStats({
-          total: data.length,
-          validated: data.filter(c => c.status === 'validated').length,
-          pending: data.filter(c => c.status === 'pending' || c.status === 'analyzing').length
+          total: formatted.length,
+          validated: formatted.filter(c => c.status === 'validated').length,
+          pending: formatted.filter(c => c.status === 'pending' || c.status === 'analyzing').length
         });
       }
+
+      // 2. Calculer la répartition réelle des pathologies sur TOUS les cas
+      const { data: allCasesData, error: allCasesError } = await supabase
+        .from('cases')
+        .select('pathology');
+
+      if (!allCasesError && allCasesData) {
+        const breastCount = allCasesData.filter(c => c.pathology === 'breast').length;
+        const cervicalCount = allCasesData.filter(c => c.pathology === 'cervical').length;
+        const totalCount = allCasesData.length;
+
+        setPathologyStats({
+          breast: breastCount,
+          cervical: cervicalCount,
+          total: totalCount
+        });
+      }
+
       setIsLoading(false);
     };
 
-    fetchPatients();
+    fetchDashboardData();
   }, []);
 
   const getStatusBadge = (status: string) => {
@@ -87,15 +110,17 @@ const ClinicianDashboard: React.FC = () => {
 
   const handlePrintPDF = () => {
     toast.success("Génération du rapport médical avec image...");
-    // Petit délai de 800ms pour laisser le temps au Canvas (les cadres) de bien se dessiner avant d'imprimer
     setTimeout(() => {
       window.print();
     }, 800);
   };
 
+  // Calcul des pourcentages pour les barres de progression
+  const breastPercentage = pathologyStats.total > 0 ? Math.round((pathologyStats.breast / pathologyStats.total) * 100) : 0;
+  const cervicalPercentage = pathologyStats.total > 0 ? Math.round((pathologyStats.cervical / pathologyStats.total) * 100) : 0;
+
   return (
     <div className="space-y-6">
-      {/* Configuration CSS magique pour forcer l'impression en couleur (cadres IA) et cacher le reste du site */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
           body * { visibility: hidden; }
@@ -221,24 +246,47 @@ const ClinicianDashboard: React.FC = () => {
           <AIAssistantChat />
         </div>
 
+        {/* GRAPHIQUE CONNECTÉ AUX DONNÉES RÉELLES */}
         <Card>
           <CardHeader>
             <CardTitle>{t('dashboard.clinician.pathologyDistribution')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-accent" />{t('pathology.breast')}</span>
-                <span className="font-medium">14 {t('stats.patients')}</span>
+            {isLoading ? (
+               <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+            ) : pathologyStats.total === 0 ? (
+               <div className="text-center py-6 text-sm text-muted-foreground">Aucune donnée disponible.</div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-accent" />{t('pathology.breast')}</span>
+                    <span className="font-medium">{pathologyStats.breast} {t('stats.patients')} ({breastPercentage}%)</span>
+                  </div>
+                  <Progress value={breastPercentage} className="h-3 [&>div]:bg-accent" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-primary" />{t('pathology.cervical')}</span>
+                    <span className="font-medium">{pathologyStats.cervical} {t('stats.patients')} ({cervicalPercentage}%)</span>
+                  </div>
+                  <Progress value={cervicalPercentage} className="h-3" />
+                </div>
+              </>
+            )}
+
+            <div className="pt-4 border-t mt-4">
+              <h4 className="text-sm font-medium mb-3">{t('dashboard.clinician.responseTime')}</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-muted/50 rounded-lg text-center">
+                  <p className="text-2xl font-bold text-primary">4.2h</p>
+                  <p className="text-xs text-muted-foreground">Moyenne</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg text-center">
+                  <p className="text-2xl font-bold text-success">2.1h</p>
+                  <p className="text-xs text-muted-foreground">Urgent</p>
+                </div>
               </div>
-              <Progress value={58} className="h-3 [&>div]:bg-accent" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-primary" />{t('pathology.cervical')}</span>
-                <span className="font-medium">10 {t('stats.patients')}</span>
-              </div>
-              <Progress value={42} className="h-3" />
             </div>
           </CardContent>
         </Card>
