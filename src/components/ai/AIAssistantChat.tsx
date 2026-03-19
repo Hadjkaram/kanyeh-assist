@@ -30,6 +30,7 @@ interface PatientOption {
   notes: string;
 }
 
+// Initialisation de Gemini
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey || "CLE_MANQUANTE");
 
@@ -86,51 +87,41 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
     }
   };
 
+  // --- FONCTION ASK GEMINI MISE À JOUR (DEBUG + STABILITÉ) ---
   const askGemini = async (userMessage: string, patient: PatientOption | undefined) => {
-    if (!apiKey) {
-      return "⚠️ Erreur : Clé API Gemini introuvable. Veuillez vérifier vos variables d'environnement sur Vercel.";
+    // Debug log pour voir si la clé API est détectée
+    console.log("Vérification clé API présente:", !!import.meta.env.VITE_GEMINI_API_KEY);
+
+    if (!import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY === "CLE_MANQUANTE") {
+      return "⚠️ Erreur : La clé API n'est pas détectée par Vercel. Vérifiez l'onglet Environment Variables (doit commencer par VITE_).";
     }
 
-    // Préparation du contexte médical
-    const patientContext = patient 
-      ? `Tu es un assistant médical IA nommé Kanyeh pour des cliniciens. 
-         Tu dois aider le médecin à comprendre le dossier clinique de son patient.
-         Voici les informations strictes du patient actuel que le médecin est en train de consulter :
-         - Nom : ${patient.name}
-         - Pathologie analysée : ${patient.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'utérus'}
-         - Diagnostic retenu par le pathologiste : ${patient.diagnosis}
-         - Notes du pathologiste : ${patient.notes || 'Aucune note supplémentaire.'}
-         
-         RÈGLES IMPORTANTES :
-         1. Ne réponds qu'en rapport avec ce patient.
-         2. Si on te demande de générer une ordonnance, fais-le de manière claire, formelle et structurée avec des tirets, en rapport avec le diagnostic.
-         3. Reste toujours professionnel, concis et poli.
-         4. Réponds toujours dans la langue de la question posée.`
-      : "Tu es Kanyeh, un assistant médical IA. Demande à l'utilisateur de sélectionner un dossier patient avant de pouvoir l'aider concrètement.";
-
-    const finalPrompt = `${patientContext}\n\nQuestion du médecin : "${userMessage}"`;
-
     try {
-      // TENTATIVE 1 : Modèle Flash (Rapide)
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-      const result = await model.generateContent(finalPrompt);
+      // Utilisation du modèle flash standard
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+      const patientContext = patient 
+        ? `Tu es Kanyeh, assistant médical expert pour des cliniciens. 
+           Informations du patient actuel :
+           - Nom : ${patient.name}
+           - Diagnostic : ${patient.diagnosis}
+           - Pathologie : ${patient.pathology}
+           - Notes : ${patient.notes || 'N/A'}
+           
+           Règles : Réponds de manière professionnelle, concise et en français. 
+           Si on demande une ordonnance, fournis une structure claire avec des tirets.`
+        : "Veuillez sélectionner un patient.";
+
+      const result = await model.generateContent(`${patientContext}\n\nQuestion du médecin : ${userMessage}`);
       const response = await result.response;
       return response.text();
 
     } catch (error: any) {
-      console.error("Erreur Gemini (Tentative 1):", error);
-      
-      // TENTATIVE 2 (Plan B) : Bascule sur Pro si Flash échoue ou est introuvable (404)
-      try {
-        const fallbackModel = genAI.getGenerativeModel({ model: "gemini-1.0-pro-latest" });
-        const result = await fallbackModel.generateContent(finalPrompt);
-        const response = await result.response;
-        return response.text();
-      } catch (fallbackError: any) {
-        return `Désolé Docteur, j'ai rencontré un problème de connexion aux serveurs de Google Gemini (Erreur 404/500). Veuillez vérifier votre clé API sur Vercel.`;
-      }
+      console.error("Détail erreur Gemini:", error);
+      return `Erreur technique : ${error.message}. Vérifiez que la clé API sur Vercel est correcte et n'a pas expiré.`;
     }
   };
+  // ----------------------------------------------------------
 
   const handleSend = async (textToProcess?: string) => {
     const text = typeof textToProcess === 'string' ? textToProcess : input;
@@ -154,7 +145,6 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
     setIsLoading(true);
 
     const patient = patients.find(p => p.id === selectedPatient);
-    
     const aiResponseText = await askGemini(text, patient);
 
     const assistantMessage: Message = {
@@ -181,17 +171,11 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
     }
   };
 
-  const suggestedQuestions = language === 'fr' 
-    ? [
-        "Quel est le diagnostic probable ?",
-        "Quelles sont les recommandations de traitement ?",
-        "Peux-tu me générer une ordonnance type pour ce diagnostic ?",
-      ]
-    : [
-        "What is the probable diagnosis?",
-        "What are the treatment recommendations?",
-        "Can you generate a standard prescription for this diagnosis?",
-      ];
+  const suggestedQuestions = [
+    "Quel est le diagnostic probable ?",
+    "Quelles sont les recommandations de traitement ?",
+    "Génère-moi une ordonnance type.",
+  ];
 
   return (
     <Card className="h-full flex flex-col border-primary/20">
@@ -200,40 +184,33 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
           <CardTitle className="flex items-center justify-between text-lg">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
-              {t('ai.assistantTitle')} (Powered by Gemini)
+              {t('ai.assistantTitle')} (Gemini)
             </div>
             <span className="flex h-2 w-2 rounded-full bg-success animate-pulse"></span>
           </CardTitle>
           
           <Select value={selectedPatient} onValueChange={handlePatientChange}>
             <SelectTrigger className="w-full bg-muted/50 border-primary/20">
-              <SelectValue placeholder={language === 'fr' ? "Sélectionner un dossier patient..." : "Select a patient case..."} />
+              <SelectValue placeholder="Sélectionner un dossier patient..." />
             </SelectTrigger>
             <SelectContent>
-              {patients.length === 0 ? (
-                <SelectItem value="none" disabled>
-                  {language === 'fr' ? "Aucun dossier validé" : "No validated cases"}
+              {patients.map(p => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} ({p.diagnosis || 'En attente'})
                 </SelectItem>
-              ) : (
-                patients.map(p => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} ({p.diagnosis || 'En attente'})
-                  </SelectItem>
-                ))
-              )}
+              ))}
             </SelectContent>
           </Select>
         </div>
       </CardHeader>
+
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
         <ScrollArea className="flex-1 px-4" ref={scrollRef}>
           {messages.length === 0 ? (
-            <div className="py-8 text-center animate-fade-in">
-              <Sparkles className="h-10 w-10 mx-auto text-primary/50 mb-3 animate-pulse-glow" />
+            <div className="py-8 text-center">
+              <Sparkles className="h-10 w-10 mx-auto text-primary/50 mb-3" />
               <p className="text-sm text-muted-foreground mb-4">
-                {selectedPatient 
-                  ? (language === 'fr' ? "Posez une question sur ce dossier." : "Ask a question about this case.") 
-                  : (language === 'fr' ? "Sélectionnez un patient pour commencer." : "Select a patient to begin.")}
+                Sélectionnez un patient pour commencer l'analyse.
               </p>
               <div className="space-y-2">
                 {suggestedQuestions.map((question, index) => (
@@ -241,7 +218,7 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
                     key={index}
                     variant="outline"
                     size="sm"
-                    className="w-full justify-start text-left h-auto py-2 px-3 hover:bg-primary/5 transition-colors"
+                    className="w-full justify-start text-left h-auto py-2"
                     onClick={() => handleSend(question)}
                     disabled={!selectedPatient}
                   >
@@ -255,36 +232,17 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
+                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  {message.role === 'assistant' && (
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <Bot className="h-4 w-4 text-primary" />
-                    </div>
-                  )}
-                  <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 ${
-                      message.role === 'user'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'bg-muted'
-                    }`}
-                  >
-                    <div className="text-sm whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: message.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                  <div className={`max-w-[80%] rounded-lg px-3 py-2 ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   </div>
-                  {message.role === 'user' && (
-                    <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
-                      <User className="h-4 w-4 text-accent" />
-                    </div>
-                  )}
                 </div>
               ))}
               {isLoading && (
-                <div className="flex gap-3 animate-fade-in">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Bot className="h-4 w-4 text-primary" />
-                  </div>
+                <div className="flex gap-3">
                   <div className="bg-muted rounded-lg px-4 py-3 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                    <span className="w-2 h-2 bg-primary/40 rounded-full animate-bounce"></span>
                     <span className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
                     <span className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                   </div>
@@ -294,17 +252,17 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
           )}
         </ScrollArea>
 
-        <div className="p-4 border-t shrink-0 bg-background/50 backdrop-blur-sm">
+        <div className="p-4 border-t bg-background/50">
           <div className="flex gap-2">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={placeholder || t('ai.chatPlaceholder')}
+              placeholder="Posez une question..."
               disabled={isLoading || !selectedPatient}
-              className="flex-1 focus-visible:ring-primary/50"
+              className="flex-1"
             />
-            <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading || !selectedPatient} size="icon" className="shrink-0 transition-transform active:scale-95">
+            <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading || !selectedPatient} size="icon">
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
