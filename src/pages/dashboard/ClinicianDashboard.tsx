@@ -96,7 +96,7 @@ const ClinicianDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Configuration CSS magique pour forcer l'impression en couleur (cadres IA) et cacher le reste du site */}
-      <style dangerouslySetContents={{__html: `
+      <style dangerouslySetInnerHTML={{__html: `
         @media print {
           body * { visibility: hidden; }
           #printable-report, #printable-report * { visibility: visible; }
