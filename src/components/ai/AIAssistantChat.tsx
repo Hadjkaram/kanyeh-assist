@@ -8,7 +8,6 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Bot, Send, User, Loader2, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-// NOUVEAU: Import du SDK Google Gemini
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface Message {
@@ -27,12 +26,10 @@ interface PatientOption {
   id: string;
   name: string;
   diagnosis: string;
-  pathology: string; // Ajouté pour donner plus de contexte à l'IA
-  notes: string;     // Ajouté pour donner plus de contexte à l'IA
+  pathology: string;
+  notes: string;
 }
 
-// Initialisation de Gemini avec la clé API
-// On utilise import.meta.env car on est sur ViteJS
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey || "CLE_MANQUANTE");
 
@@ -89,17 +86,15 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
     }
   };
 
-  // NOUVEAU: La vraie fonction qui appelle Gemini
   const askGemini = async (userMessage: string, patient: PatientOption | undefined) => {
     if (!apiKey) {
-      return "⚠️ Erreur : Clé API Gemini introuvable. Veuillez vérifier votre fichier .env.local.";
+      return "⚠️ Erreur : Clé API Gemini introuvable. Veuillez vérifier vos variables d'environnement sur Vercel.";
     }
 
     try {
-      // On choisit le modèle flash, parfait pour un chat rapide
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // CORRECTION : Modèle universel "gemini-pro"
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-      // C'est ici que réside le secret : Le System Prompt (le contexte caché)
       const patientContext = patient 
         ? `Tu es un assistant médical IA nommé Kanyeh pour des cliniciens. 
            Tu dois aider le médecin à comprendre le dossier clinique de son patient.
@@ -116,17 +111,15 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
            4. Réponds toujours dans la langue de la question posée.`
         : "Tu es Kanyeh, un assistant médical IA. Demande à l'utilisateur de sélectionner un dossier patient avant de pouvoir l'aider concrètement.";
 
-      // On assemble le contexte caché avec la question de l'utilisateur
       const finalPrompt = `${patientContext}\n\nQuestion du médecin : "${userMessage}"`;
 
-      // On envoie la requête à Gemini
       const result = await model.generateContent(finalPrompt);
       const response = await result.response;
       return response.text();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erreur API Gemini:", error);
-      return "Désolé Docteur, j'ai rencontré un problème de connexion aux serveurs de Google Gemini. Veuillez réessayer dans un instant.";
+      return `Désolé Docteur, j'ai rencontré un problème avec les serveurs Gemini. Détail : ${error.message || "Erreur de connexion"}`;
     }
   };
 
@@ -153,7 +146,6 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
 
     const patient = patients.find(p => p.id === selectedPatient);
     
-    // NOUVEAU : Appel de la vraie IA
     const aiResponseText = await askGemini(text, patient);
 
     const assistantMessage: Message = {
