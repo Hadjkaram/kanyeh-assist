@@ -3,11 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // NOUVEAU
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Bot, Send, User, Loader2, Sparkles } from 'lucide-react';
-import { supabase } from '@/lib/supabase'; // NOUVEAU
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+// NOUVEAU: Import du SDK Google Gemini
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface Message {
   id: string;
@@ -21,12 +23,18 @@ interface AIAssistantChatProps {
   placeholder?: string;
 }
 
-// NOUVEAU: Interface pour le menu déroulant
 interface PatientOption {
   id: string;
   name: string;
   diagnosis: string;
+  pathology: string; // Ajouté pour donner plus de contexte à l'IA
+  notes: string;     // Ajouté pour donner plus de contexte à l'IA
 }
+
+// Initialisation de Gemini avec la clé API
+// On utilise import.meta.env car on est sur ViteJS
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(apiKey || "CLE_MANQUANTE");
 
 const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder }) => {
   const { t, language } = useLanguage();
@@ -35,27 +43,30 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // NOUVEAU: États pour la sélection du patient
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<string>('');
 
-  // NOUVEAU: Récupération des patients validés
   useEffect(() => {
     const fetchPatients = async () => {
       const { data } = await supabase
         .from('cases')
-        .select('id, patient_name, diagnosis')
+        .select('id, patient_name, diagnosis, pathology, analysis_notes')
         .eq('status', 'validated')
         .order('created_at', { ascending: false });
       
       if (data) {
-        setPatients(data.map(d => ({ id: d.id, name: d.patient_name, diagnosis: d.diagnosis })));
+        setPatients(data.map(d => ({ 
+          id: d.id, 
+          name: d.patient_name, 
+          diagnosis: d.diagnosis,
+          pathology: d.pathology,
+          notes: d.analysis_notes
+        })));
       }
     };
     fetchPatients();
   }, []);
 
-  // NOUVEAU: Message automatique quand on choisit un patient
   const handlePatientChange = (patientId: string) => {
     setSelectedPatient(patientId);
     const patient = patients.find(p => p.id === patientId);
@@ -78,59 +89,50 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
     }
   };
 
-  // Moteur de réponses IA mocké (beaucoup plus intelligent et conversationnel)
-  const getMockResponse = (userMessage: string, patientName?: string, patientDiag?: string): string => {
-    const msg = userMessage.toLowerCase();
-    const pName = patientName || "ce patient";
-    const diag = patientDiag ? patientDiag.toLowerCase() : "en attente";
-    
-    if (language === 'fr') {
-      // 1. Réponse à la demande d'Ordonnance
-      if (msg.includes('ordonnance') || msg.includes('prescris') || msg.includes('prescription')) {
-        return `Voici une proposition d'ordonnance type pour **${pName}** basée sur son diagnostic (${diag}) :\n\n📝 **ORDONNANCE MÉDICALE**\n\n**Motif :** Suivi clinique post-diagnostic anatomopathologique.\n\n1. **Consultation :** Visite de contrôle gynécologique/sénologique recommandée.\n2. **Imagerie/Biologie :** Bilan de routine sous 6 mois.\n3. **Recommandations :** Contacter immédiatement le centre en cas d'apparition de nouveaux symptômes (douleurs, saignements).\n\n*Souhaitez-vous que je transmette cette ordonnance directement dans le DMP du patient via PASS SANTÉ ?*`;
-      }
+  // NOUVEAU: La vraie fonction qui appelle Gemini
+  const askGemini = async (userMessage: string, patient: PatientOption | undefined) => {
+    if (!apiKey) {
+      return "⚠️ Erreur : Clé API Gemini introuvable. Veuillez vérifier votre fichier .env.local.";
+    }
 
-      // 2. Réponse à "Que penses-tu de son analyse ?"
-      if (msg.includes('pense') || msg.includes('analyse') || msg.includes('avis')) {
-        if (diag === 'normal' || diag.includes('benin') || diag.includes('bénin')) {
-           return `L'analyse de **${pName}** est très rassurante. Le diagnostic est **${diag}**. Sur le plan clinique, aucune intervention chirurgicale ou médicamenteuse agressive n'est requise. Une simple surveillance de routine est amplement suffisante.`;
-        } else if (diag === 'suspicious' || diag.includes('atypique') || diag.includes('atypical')) {
-           return `Le cas de **${pName}** présente des atypies cellulaires (**${diag}**). Il n'y a pas de malignité franche confirmée, mais la prudence est de rigueur. Je vous suggère fortement de programmer une biopsie complémentaire ou une colposcopie sous 4 à 6 semaines.`;
-        } else if (diag === 'malignant' || diag.includes('malin')) {
-           return `Le diagnostic de **${pName}** est **${diag}**. C'est un dossier prioritaire qui doit être présenté en RCP (Réunion de Concertation Pluridisciplinaire). Le profil tissulaire indique qu'une prise en charge oncologique (exérèse chirurgicale / chimiothérapie) devra être discutée rapidement.`;
-        }
-        return `Les résultats d'analyse pour **${pName}** sont actuellement qualifiés de "${diag}". Quel aspect spécifique de ce diagnostic souhaitez-vous que j'approfondisse ?`;
-      }
+    try {
+      // On choisit le modèle flash, parfait pour un chat rapide
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      // 3. Réponse aux traitements généraux
-      if (msg.includes('traitement') || msg.includes('recommandation') || msg.includes('suite') || msg.includes('faire')) {
-        return `Pour une classification **${diag}**, le protocole international (OMS 2023) recommande d'adapter l'intervention à l'âge et aux antécédents du patient. Voulez-vous que je génère une ordonnance type pour anticiper la prochaine consultation ?`;
-      }
+      // C'est ici que réside le secret : Le System Prompt (le contexte caché)
+      const patientContext = patient 
+        ? `Tu es un assistant médical IA nommé Kanyeh pour des cliniciens. 
+           Tu dois aider le médecin à comprendre le dossier clinique de son patient.
+           Voici les informations strictes du patient actuel que le médecin est en train de consulter :
+           - Nom : ${patient.name}
+           - Pathologie analysée : ${patient.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'utérus'}
+           - Diagnostic retenu par le pathologiste : ${patient.diagnosis}
+           - Notes du pathologiste : ${patient.notes || 'Aucune note supplémentaire.'}
+           
+           RÈGLES IMPORTANTES :
+           1. Ne réponds qu'en rapport avec ce patient.
+           2. Si on te demande de générer une ordonnance, fais-le de manière claire, formelle et structurée avec des tirets, en rapport avec le diagnostic.
+           3. Reste toujours professionnel, concis et poli.
+           4. Réponds toujours dans la langue de la question posée.`
+        : "Tu es Kanyeh, un assistant médical IA. Demande à l'utilisateur de sélectionner un dossier patient avant de pouvoir l'aider concrètement.";
 
-      // 4. Salutations
-      if (msg.includes('merci') || msg.includes('ok') || msg.includes('d\'accord') || msg.includes('parfait')) {
-        return `Je vous en prie, Docteur. Je reste à votre disposition pour le suivi de **${pName}** ou de tout autre patient.`;
-      }
+      // On assemble le contexte caché avec la question de l'utilisateur
+      const finalPrompt = `${patientContext}\n\nQuestion du médecin : "${userMessage}"`;
 
-      // 5. Fallback Intelligent
-      return `Je parcours le dossier de **${pName}**. Pourriez-vous préciser votre demande ? Vous pouvez me demander par exemple : "Que penses-tu de son analyse ?", "Génère une ordonnance", ou "Quelles sont les options de traitement ?"`;
-    } else {
-      if (msg.includes('prescription') || msg.includes('draft')) {
-        return `Here is a standard prescription draft for **${pName}** based on the ${diag} diagnosis.\n\nWould you like me to send it directly to their EMR?`;
-      }
-      if (msg.includes('think') || msg.includes('analysis') || msg.includes('opinion')) {
-        return `The analysis for **${pName}** shows a **${diag}** diagnosis. Based on current guidelines, active surveillance is recommended.`;
-      }
-      if (msg.includes('thanks') || msg.includes('ok') || msg.includes('great')) {
-        return "You're welcome, Doctor. Don't hesitate if you have any other questions.";
-      }
-      return `I am reviewing **${pName}**'s file. Please specify if you need a treatment plan, an analysis review, or a prescription draft.`;
+      // On envoie la requête à Gemini
+      const result = await model.generateContent(finalPrompt);
+      const response = await result.response;
+      return response.text();
+
+    } catch (error) {
+      console.error("Erreur API Gemini:", error);
+      return "Désolé Docteur, j'ai rencontré un problème de connexion aux serveurs de Google Gemini. Veuillez réessayer dans un instant.";
     }
   };
 
   const handleSend = async (textToProcess?: string) => {
     const text = typeof textToProcess === 'string' ? textToProcess : input;
-    // NOUVEAU : On bloque l'envoi si aucun patient n'est sélectionné
+    
     if (!text.trim() || isLoading || !selectedPatient) {
       if (!selectedPatient) {
         toast.warning(language === 'fr' ? "Veuillez d'abord sélectionner un patient." : "Please select a patient first.");
@@ -149,15 +151,15 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
     setInput('');
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    // NOUVEAU : On récupère les infos du patient pour le cerveau
     const patient = patients.find(p => p.id === selectedPatient);
+    
+    // NOUVEAU : Appel de la vraie IA
+    const aiResponseText = await askGemini(text, patient);
 
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      content: getMockResponse(text, patient?.name, patient?.diagnosis),
+      content: aiResponseText,
       timestamp: new Date(),
     };
 
@@ -180,14 +182,14 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
 
   const suggestedQuestions = language === 'fr' 
     ? [
-        "Que penses-tu de son analyse ?",
+        "Quel est le diagnostic probable ?",
         "Quelles sont les recommandations de traitement ?",
-        "Oui, génère moi une ordonnance type.",
+        "Peux-tu me générer une ordonnance type pour ce diagnostic ?",
       ]
     : [
-        "What do you think of this analysis?",
+        "What is the probable diagnosis?",
         "What are the treatment recommendations?",
-        "Yes, generate a standard prescription.",
+        "Can you generate a standard prescription for this diagnosis?",
       ];
 
   return (
@@ -197,13 +199,11 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
           <CardTitle className="flex items-center justify-between text-lg">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-primary" />
-              {t('ai.assistantTitle')}
+              {t('ai.assistantTitle')} (Powered by Gemini)
             </div>
-            {/* NOUVEAU: Petit badge de statut */}
-            <span className="flex h-2 w-2 rounded-full bg-success"></span>
+            <span className="flex h-2 w-2 rounded-full bg-success animate-pulse"></span>
           </CardTitle>
           
-          {/* NOUVEAU: Le Sélecteur de patient */}
           <Select value={selectedPatient} onValueChange={handlePatientChange}>
             <SelectTrigger className="w-full bg-muted/50 border-primary/20">
               <SelectValue placeholder={language === 'fr' ? "Sélectionner un dossier patient..." : "Select a patient case..."} />
@@ -230,7 +230,6 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
             <div className="py-8 text-center animate-fade-in">
               <Sparkles className="h-10 w-10 mx-auto text-primary/50 mb-3 animate-pulse-glow" />
               <p className="text-sm text-muted-foreground mb-4">
-                {/* NOUVEAU : Message conditionnel */}
                 {selectedPatient 
                   ? (language === 'fr' ? "Posez une question sur ce dossier." : "Ask a question about this case.") 
                   : (language === 'fr' ? "Sélectionnez un patient pour commencer." : "Select a patient to begin.")}
@@ -243,7 +242,7 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
                     size="sm"
                     className="w-full justify-start text-left h-auto py-2 px-3 hover:bg-primary/5 transition-colors"
                     onClick={() => handleSend(question)}
-                    disabled={!selectedPatient} // NOUVEAU: Bloqué si pas de patient
+                    disabled={!selectedPatient}
                   >
                     {question}
                   </Button>
@@ -269,8 +268,7 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
                         : 'bg-muted'
                     }`}
                   >
-                    {/* NOUVEAU: On permet un rendu HTML basique pour le gras des messages automatiques */}
-                    <p className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: message.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                    <div className="text-sm whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: message.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                   </div>
                   {message.role === 'user' && (
                     <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
@@ -302,7 +300,7 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder || t('ai.chatPlaceholder')}
-              disabled={isLoading || !selectedPatient} // NOUVEAU: Bloqué si pas de patient
+              disabled={isLoading || !selectedPatient}
               className="flex-1 focus-visible:ring-primary/50"
             />
             <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading || !selectedPatient} size="icon" className="shrink-0 transition-transform active:scale-95">
