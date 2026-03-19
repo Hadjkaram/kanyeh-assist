@@ -4,7 +4,6 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import StatCard from '@/components/dashboard/StatCard';
 import RecentCasesTable from '@/components/dashboard/RecentCasesTable';
-import AIAnalysisPanel from '@/components/ai/AIAnalysisPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +15,8 @@ import {
   AlertCircle,
   ArrowRight,
   Loader2,
-  FileText // <-- CORRECTION : L'icône manquante est ajoutée ici !
+  FileText,
+  BrainCircuit // NOUVELLE ICÔNE
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -203,8 +203,19 @@ const PathologistDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* AI Analysis Panel */}
-        <AIAnalysisPanel />
+        {/* NOUVEAU: Call to action pour l'IA (Remplace l'ancien composant cassé) */}
+        <Card className="bg-gradient-to-b from-primary/10 to-primary/5 border-primary/20 flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="h-16 w-16 bg-primary/20 rounded-full flex items-center justify-center">
+            <BrainCircuit className="h-8 w-8 text-primary" />
+          </div>
+          <h3 className="text-lg font-bold text-foreground">Assistant IA Kanyeh</h3>
+          <p className="text-sm text-muted-foreground">
+            Sélectionnez un dossier dans la liste d'attente pour que l'IA analyse les lames du patient et vous aide à établir un diagnostic rapide et précis.
+          </p>
+          <Button onClick={() => navigate('/dashboard/to-analyze')} className="w-full mt-4 gap-2">
+            Aller aux dossiers <ArrowRight className="h-4 w-4" />
+          </Button>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -246,19 +257,24 @@ const PathologistDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Placeholder for image viewer */}
-        <Card>
+        {/* NOUVEAU: Encadré informatif (Remplace le "placeholder" d'image) */}
+        <Card className="bg-muted/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Microscope className="h-5 w-5 text-primary" />
-              {t('ai.analysisTitle')}
+              <CheckCircle className="h-5 w-5 text-success" />
+              Protocoles et Mises à jour
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="aspect-video bg-muted/50 rounded-lg flex items-center justify-center border-2 border-dashed border-muted-foreground/20">
-              <p className="text-sm text-muted-foreground">
-                {t('ai.analysisDescription')}
-              </p>
+            <div className="space-y-4">
+              <div className="p-4 bg-background rounded-lg border shadow-sm">
+                <h4 className="font-medium text-sm mb-1">Mise à jour classification Bethesda 2023</h4>
+                <p className="text-xs text-muted-foreground">Le modèle IA a été mis à jour avec les dernières recommandations internationales concernant les lésions cervicales.</p>
+              </div>
+              <div className="p-4 bg-background rounded-lg border shadow-sm">
+                <h4 className="font-medium text-sm mb-1">Rappel : Urgences Oncologiques</h4>
+                <p className="text-xs text-muted-foreground">Les dossiers signalés "Urgents" (rouge) nécessitent un diagnostic validé sous 24h selon la charte du centre.</p>
+              </div>
             </div>
           </CardContent>
         </Card>

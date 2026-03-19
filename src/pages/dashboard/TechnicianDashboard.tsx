@@ -4,7 +4,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCases } from '@/contexts/CaseContext';
 import StatCard from '@/components/dashboard/StatCard';
 import RecentCasesTable from '@/components/dashboard/RecentCasesTable';
-import ImageQualityChecker from '@/components/ai/ImageQualityChecker';
 import CreateCaseModal from '@/components/cases/CreateCaseModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +16,7 @@ import {
   Plus,
   Upload,
   FileEdit,
+  ShieldCheck // NOUVELLE ICÔNE
 } from 'lucide-react';
 
 const TechnicianDashboard: React.FC = () => {
@@ -139,8 +139,19 @@ const TechnicianDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* AI Quality Check */}
-        <ImageQualityChecker />
+        {/* NOUVEAU: Encart informatif IA (remplace le composant buggé) */}
+        <Card className="bg-gradient-to-b from-accent/10 to-accent/5 border-accent/20 flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="h-16 w-16 bg-accent/20 rounded-full flex items-center justify-center">
+            <ShieldCheck className="h-8 w-8 text-accent" />
+          </div>
+          <h3 className="text-lg font-bold text-foreground">Contrôle Qualité IA</h3>
+          <p className="text-sm text-muted-foreground">
+            L'analyse IA de la qualité des images s'effectue automatiquement à l'intérieur de la fenêtre de création d'un nouveau dossier patient.
+          </p>
+          <Button onClick={handleNewCase} className="w-full mt-4 gap-2" variant="outline">
+            <Plus className="h-4 w-4" /> Démarrer une capture
+          </Button>
+        </Card>
       </div>
 
       {/* Workflow Status */}
