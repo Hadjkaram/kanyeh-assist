@@ -70,6 +70,7 @@ interface CaseToAnalyze {
   imagesCount: number;
   waitTime: string;
   status: 'pending' | 'analyzing';
+  imageUrl?: string; // NOUVEAU : On prépare la boîte pour l'image
 }
 
 const ToAnalyzePage: React.FC = () => {
@@ -115,7 +116,8 @@ const ToAnalyzePage: React.FC = () => {
           submittedBy: d.submitted_by || 'Technicien',
           imagesCount: d.images_count || 0,
           waitTime: 'En attente', 
-          status: d.status
+          status: d.status,
+          imageUrl: d.image_url // NOUVEAU : On récupère la vraie image depuis la BDD
         })) as CaseToAnalyze[];
         
         setRealCases(formattedData);
@@ -413,18 +415,26 @@ const ToAnalyzePage: React.FC = () => {
                 
                 {viewMode === 'live' ? (
                   <div className="w-full h-full max-w-4xl max-h-[600px]">
-                  {/* CORRECTION : L'erreur rouge est partie, on l'appelle proprement */}
                   <MicroscopeLiveView />
                   </div>
                 ) : (
-                  <div className="transition-transform duration-200" style={{ transform: `scale(${zoomLevel / 100})` }}>
-                    <div className="w-[600px] h-[400px] bg-gradient-to-br from-muted to-muted/50 rounded-lg flex items-center justify-center">
-                      <div className="text-center">
-                        <Microscope className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
-                        <p className="text-muted-foreground">{t('dashboard.toAnalyze.imagePlaceholder')}</p>
-                        <p className="text-sm text-muted-foreground/70">{t('dashboard.toAnalyze.slideImage')} #{currentImageIndex + 1}</p>
+                  <div className="transition-transform duration-200 w-full h-full flex items-center justify-center" style={{ transform: `scale(${zoomLevel / 100})` }}>
+                    {/* NOUVEAU : Affichage de la VRAIE image si elle existe */}
+                    {selectedCase?.imageUrl ? (
+                      <img 
+                        src={selectedCase.imageUrl} 
+                        alt={`Prélèvement ${selectedCase.patientName}`} 
+                        className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-[600px] h-[400px] bg-gradient-to-br from-muted to-muted/50 rounded-lg flex items-center justify-center">
+                        <div className="text-center">
+                          <Microscope className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
+                          <p className="text-muted-foreground">Aucune image disponible dans la base de données</p>
+                          <p className="text-sm text-muted-foreground/70">{t('dashboard.toAnalyze.slideImage')} #{currentImageIndex + 1}</p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -505,7 +515,8 @@ const ToAnalyzePage: React.FC = () => {
                       <div className="p-2 bg-success/10 text-success text-xs rounded-md border border-success/20 flex items-center gap-2">
                         <CheckCircle className="h-3 w-3" /> L'IA a accès à votre diagnostic pour affiner son analyse.
                       </div>
-                      <AIAnalysisPanel />
+                      {/* NOUVEAU : On donne la VRAIE image à ton algorithme d'IA */}
+                      <AIAnalysisPanel imageUrl={selectedCase?.imageUrl} />
                     </div>
                   )}
                 </TabsContent>
