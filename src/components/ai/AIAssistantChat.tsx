@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Bot, Send, User, Loader2, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabase'; // NOUVEAU
+import { toast } from 'sonner';
 
 interface Message {
   id: string;
@@ -78,47 +79,52 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
   };
 
   // Moteur de réponses IA mocké (beaucoup plus intelligent et conversationnel)
-  const getMockResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
+  const getMockResponse = (userMessage: string, patientName?: string, patientDiag?: string): string => {
+    const msg = userMessage.toLowerCase();
+    const pName = patientName || "ce patient";
+    const diag = patientDiag ? patientDiag.toLowerCase() : "en attente";
     
     if (language === 'fr') {
-      if (lowerMessage.includes('diagnostic') || lowerMessage.includes('résultat') || lowerMessage.includes('probable')) {
-        return "D'après l'analyse du rapport, le diagnostic indique une lésion de bas grade (LSIL). Je recommande un suivi colposcopique dans 6 mois. Les marqueurs p16/Ki-67 pourraient aider à stratifier le risque.";
+      // 1. Réponse à la demande d'Ordonnance
+      if (msg.includes('ordonnance') || msg.includes('prescris') || msg.includes('prescription')) {
+        return `Voici une proposition d'ordonnance type pour **${pName}** basée sur son diagnostic (${diag}) :\n\n📝 **ORDONNANCE MÉDICALE**\n\n**Motif :** Suivi clinique post-diagnostic anatomopathologique.\n\n1. **Consultation :** Visite de contrôle gynécologique/sénologique recommandée.\n2. **Imagerie/Biologie :** Bilan de routine sous 6 mois.\n3. **Recommandations :** Contacter immédiatement le centre en cas d'apparition de nouveaux symptômes (douleurs, saignements).\n\n*Souhaitez-vous que je transmette cette ordonnance directement dans le DMP du patient via PASS SANTÉ ?*`;
       }
-      if (lowerMessage.includes('traitement') || lowerMessage.includes('recommandation') || lowerMessage.includes('quoi') || lowerMessage.includes('autre') || lowerMessage.includes('suite')) {
-        return "Pour la suite, une surveillance active est généralement recommandée pour ce type de lésion (LSIL) chez une patiente jeune. Un frottis de contrôle à 12 mois est conseillé selon les directives de l'OMS 2023. Souhaitez-vous que je génère une ordonnance type ?";
+
+      // 2. Réponse à "Que penses-tu de son analyse ?"
+      if (msg.includes('pense') || msg.includes('analyse') || msg.includes('avis')) {
+        if (diag === 'normal' || diag.includes('benin') || diag.includes('bénin')) {
+           return `L'analyse de **${pName}** est très rassurante. Le diagnostic est **${diag}**. Sur le plan clinique, aucune intervention chirurgicale ou médicamenteuse agressive n'est requise. Une simple surveillance de routine est amplement suffisante.`;
+        } else if (diag === 'suspicious' || diag.includes('atypique') || diag.includes('atypical')) {
+           return `Le cas de **${pName}** présente des atypies cellulaires (**${diag}**). Il n'y a pas de malignité franche confirmée, mais la prudence est de rigueur. Je vous suggère fortement de programmer une biopsie complémentaire ou une colposcopie sous 4 à 6 semaines.`;
+        } else if (diag === 'malignant' || diag.includes('malin')) {
+           return `Le diagnostic de **${pName}** est **${diag}**. C'est un dossier prioritaire qui doit être présenté en RCP (Réunion de Concertation Pluridisciplinaire). Le profil tissulaire indique qu'une prise en charge oncologique (exérèse chirurgicale / chimiothérapie) devra être discutée rapidement.`;
+        }
+        return `Les résultats d'analyse pour **${pName}** sont actuellement qualifiés de "${diag}". Quel aspect spécifique de ce diagnostic souhaitez-vous que j'approfondisse ?`;
       }
-      if (lowerMessage.includes('examen') || lowerMessage.includes('complémentaire')) {
-        return "Je suggère une colposcopie avec test HPV. Voulez-vous que je vérifie les disponibilités dans les centres partenaires ou que je prépare la demande d'examen ?";
+
+      // 3. Réponse aux traitements généraux
+      if (msg.includes('traitement') || msg.includes('recommandation') || msg.includes('suite') || msg.includes('faire')) {
+        return `Pour une classification **${diag}**, le protocole international (OMS 2023) recommande d'adapter l'intervention à l'âge et aux antécédents du patient. Voulez-vous que je génère une ordonnance type pour anticiper la prochaine consultation ?`;
       }
-      if (lowerMessage.includes('sein') || lowerMessage.includes('mammaire')) {
-        return "L'analyse montre une masse de catégorie BI-RADS 4a. Une biopsie est recommandée. Le score Ki-67 de 15% suggère une prolifération modérée.";
+
+      // 4. Salutations
+      if (msg.includes('merci') || msg.includes('ok') || msg.includes('d\'accord') || msg.includes('parfait')) {
+        return `Je vous en prie, Docteur. Je reste à votre disposition pour le suivi de **${pName}** ou de tout autre patient.`;
       }
-      if (lowerMessage.includes('merci') || lowerMessage.includes('ok') || lowerMessage.includes('d\'accord') || lowerMessage.includes('parfait')) {
-        return "Je vous en prie, Docteur. N'hésitez pas si vous avez d'autres questions sur ce dossier ou si vous souhaitez analyser un autre patient.";
-      }
-      // Modifié légèrement pour utiliser le patient sélectionné s'il y en a un
-      const patientName = patients.find(p => p.id === selectedPatient)?.name;
-      return patientName 
-        ? `En tant qu'assistant clinique, je base mes réponses sur le dossier de ${patientName}. Je peux vous aider à formuler un plan de traitement ou chercher des protocoles médicaux adaptés.`
-        : "Veuillez d'abord sélectionner un patient dans le menu déroulant en haut pour que je puisse vous répondre précisément.";
+
+      // 5. Fallback Intelligent
+      return `Je parcours le dossier de **${pName}**. Pourriez-vous préciser votre demande ? Vous pouvez me demander par exemple : "Que penses-tu de son analyse ?", "Génère une ordonnance", ou "Quelles sont les options de traitement ?"`;
     } else {
-      if (lowerMessage.includes('diagnosis') || lowerMessage.includes('result') || lowerMessage.includes('probable')) {
-        return "Based on the report analysis, the diagnosis indicates a low-grade lesion (LSIL). I recommend colposcopic follow-up in 6 months. P16/Ki-67 markers could help stratify the risk.";
+      if (msg.includes('prescription') || msg.includes('draft')) {
+        return `Here is a standard prescription draft for **${pName}** based on the ${diag} diagnosis.\n\nWould you like me to send it directly to their EMR?`;
       }
-      if (lowerMessage.includes('treatment') || lowerMessage.includes('recommendation') || lowerMessage.includes('what else') || lowerMessage.includes('next')) {
-        return "For LSIL in a patient under 30, active surveillance is generally recommended. A follow-up smear at 12 months is advised according to WHO 2023 guidelines. Would you like me to draft a standard prescription?";
+      if (msg.includes('think') || msg.includes('analysis') || msg.includes('opinion')) {
+        return `The analysis for **${pName}** shows a **${diag}** diagnosis. Based on current guidelines, active surveillance is recommended.`;
       }
-      if (lowerMessage.includes('test') || lowerMessage.includes('additional')) {
-        return "I suggest a colposcopy with HPV testing. Would you like me to check availability in partner centers?";
+      if (msg.includes('thanks') || msg.includes('ok') || msg.includes('great')) {
+        return "You're welcome, Doctor. Don't hesitate if you have any other questions.";
       }
-      if (lowerMessage.includes('breast') || lowerMessage.includes('mammary')) {
-        return "The analysis shows a BI-RADS category 4a mass. Biopsy is recommended. The Ki-67 score of 15% suggests moderate proliferation.";
-      }
-      if (lowerMessage.includes('thanks') || lowerMessage.includes('ok') || lowerMessage.includes('great')) {
-        return "You're welcome, Doctor. Don't hesitate if you have any other questions about this case or another patient.";
-      }
-      return "Please select a patient from the dropdown menu first so I can give you accurate information.";
+      return `I am reviewing **${pName}**'s file. Please specify if you need a treatment plan, an analysis review, or a prescription draft.`;
     }
   };
 
@@ -145,10 +151,13 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
 
     await new Promise(resolve => setTimeout(resolve, 1500));
 
+    // NOUVEAU : On récupère les infos du patient pour le cerveau
+    const patient = patients.find(p => p.id === selectedPatient);
+
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      content: getMockResponse(text),
+      content: getMockResponse(text, patient?.name, patient?.diagnosis),
       timestamp: new Date(),
     };
 
@@ -171,14 +180,14 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
 
   const suggestedQuestions = language === 'fr' 
     ? [
-        "Quel est le diagnostic probable ?",
+        "Que penses-tu de son analyse ?",
         "Quelles sont les recommandations de traitement ?",
-        "Quels examens complémentaires suggérez-vous ?",
+        "Oui, génère moi une ordonnance type.",
       ]
     : [
-        "What is the probable diagnosis?",
+        "What do you think of this analysis?",
         "What are the treatment recommendations?",
-        "What additional tests do you suggest?",
+        "Yes, generate a standard prescription.",
       ];
 
   return (
