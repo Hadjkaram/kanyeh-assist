@@ -91,35 +91,44 @@ const AIAssistantChat: React.FC<AIAssistantChatProps> = ({ context, placeholder 
       return "⚠️ Erreur : Clé API Gemini introuvable. Veuillez vérifier vos variables d'environnement sur Vercel.";
     }
 
+    // Préparation du contexte médical
+    const patientContext = patient 
+      ? `Tu es un assistant médical IA nommé Kanyeh pour des cliniciens. 
+         Tu dois aider le médecin à comprendre le dossier clinique de son patient.
+         Voici les informations strictes du patient actuel que le médecin est en train de consulter :
+         - Nom : ${patient.name}
+         - Pathologie analysée : ${patient.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'utérus'}
+         - Diagnostic retenu par le pathologiste : ${patient.diagnosis}
+         - Notes du pathologiste : ${patient.notes || 'Aucune note supplémentaire.'}
+         
+         RÈGLES IMPORTANTES :
+         1. Ne réponds qu'en rapport avec ce patient.
+         2. Si on te demande de générer une ordonnance, fais-le de manière claire, formelle et structurée avec des tirets, en rapport avec le diagnostic.
+         3. Reste toujours professionnel, concis et poli.
+         4. Réponds toujours dans la langue de la question posée.`
+      : "Tu es Kanyeh, un assistant médical IA. Demande à l'utilisateur de sélectionner un dossier patient avant de pouvoir l'aider concrètement.";
+
+    const finalPrompt = `${patientContext}\n\nQuestion du médecin : "${userMessage}"`;
+
     try {
-      // CORRECTION : Modèle universel "gemini-pro"
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-      const patientContext = patient 
-        ? `Tu es un assistant médical IA nommé Kanyeh pour des cliniciens. 
-           Tu dois aider le médecin à comprendre le dossier clinique de son patient.
-           Voici les informations strictes du patient actuel que le médecin est en train de consulter :
-           - Nom : ${patient.name}
-           - Pathologie analysée : ${patient.pathology === 'breast' ? 'Cancer du Sein' : 'Cancer du Col de l\'utérus'}
-           - Diagnostic retenu par le pathologiste : ${patient.diagnosis}
-           - Notes du pathologiste : ${patient.notes || 'Aucune note supplémentaire.'}
-           
-           RÈGLES IMPORTANTES :
-           1. Ne réponds qu'en rapport avec ce patient.
-           2. Si on te demande de générer une ordonnance, fais-le de manière claire, formelle et structurée avec des tirets, en rapport avec le diagnostic.
-           3. Reste toujours professionnel, concis et poli.
-           4. Réponds toujours dans la langue de la question posée.`
-        : "Tu es Kanyeh, un assistant médical IA. Demande à l'utilisateur de sélectionner un dossier patient avant de pouvoir l'aider concrètement.";
-
-      const finalPrompt = `${patientContext}\n\nQuestion du médecin : "${userMessage}"`;
-
+      // TENTATIVE 1 : Modèle Flash (Rapide)
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
       const result = await model.generateContent(finalPrompt);
       const response = await result.response;
       return response.text();
 
     } catch (error: any) {
-      console.error("Erreur API Gemini:", error);
-      return `Désolé Docteur, j'ai rencontré un problème avec les serveurs Gemini. Détail : ${error.message || "Erreur de connexion"}`;
+      console.error("Erreur Gemini (Tentative 1):", error);
+      
+      // TENTATIVE 2 (Plan B) : Bascule sur Pro si Flash échoue ou est introuvable (404)
+      try {
+        const fallbackModel = genAI.getGenerativeModel({ model: "gemini-1.0-pro-latest" });
+        const result = await fallbackModel.generateContent(finalPrompt);
+        const response = await result.response;
+        return response.text();
+      } catch (fallbackError: any) {
+        return `Désolé Docteur, j'ai rencontré un problème de connexion aux serveurs de Google Gemini (Erreur 404/500). Veuillez vérifier votre clé API sur Vercel.`;
+      }
     }
   };
 
