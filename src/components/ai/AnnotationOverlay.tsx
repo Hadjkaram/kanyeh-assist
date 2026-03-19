@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-// Re-définition du type de région
 interface DetectedRegion {
   id: string;
   x: number;
@@ -21,10 +20,10 @@ interface AnnotationOverlayProps {
 
 const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({ imageUrl, detectedRegions, zoomLevel, patientName }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
+  // On récupère la taille RÉELLE de l'image
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
@@ -33,42 +32,54 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({ imageUrl, detecte
     img.src = imageUrl;
   }, [imageUrl]);
 
+  // On dessine les cadres
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    const container = containerRef.current;
-    const img = imgRef.current;
+    
+    if (!canvas || !ctx || imageSize.width === 0) return;
 
-    if (!canvas || !ctx || !container || !img || !imageUrl || imageSize.width === 0) return;
-
-    // Set canvas dimensions to match the base image size
+    // Le canvas prend la dimension exacte de l'image d'origine
     canvas.width = imageSize.width;
     canvas.height = imageSize.height;
 
-    // Draw outlines for each detected region
-    ctx.lineWidth = 5; // Utilisation d'un trait plus épais car dessiné sur les dimensions d'origine
+    // On efface le canvas avant de redessiner
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Dessin des rectangles
+    ctx.lineWidth = Math.max(5, imageSize.width * 0.005); // Épaisseur adaptative
     detectedRegions.forEach(region => {
       const { x, y, width, height, classification } = region;
+      
       const color =
-        classification === 'malignant' ? 'red' :
-        classification === 'suspicious' ? 'orange' : 'green';
+        classification === 'malignant' ? '#ef4444' : // Rouge
+        classification === 'suspicious' ? '#f59e0b' : // Orange
+        '#10b981'; // Vert
 
       ctx.strokeStyle = color;
       ctx.strokeRect(x, y, width, height);
+
+      // Petit effet : on colorie l'intérieur très légèrement
+      ctx.fillStyle = color + '20'; // 20 = opacité
+      ctx.fillRect(x, y, width, height);
     });
 
   }, [imageUrl, detectedRegions, imageSize]);
 
   return (
-    <div ref={containerRef} className="w-full h-full flex items-center justify-center overflow-auto p-4 transition-transform duration-200" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'center center' }}>
-        <div className='relative flex items-center justify-center'>
+    <div className="w-full h-full flex items-center justify-center overflow-auto p-4 transition-transform duration-200" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'center center' }}>
+        {/* Le secret est ici : relative et inline-block pour que le canvas colle parfaitement à l'image */}
+        <div className='relative inline-block'>
             <img
-            ref={imgRef}
-            src={imageUrl}
-            alt={`Prélèvement ${patientName}`}
-            className="max-w-full max-h-full object-contain rounded-lg shadow-sm block"
+              ref={imgRef}
+              src={imageUrl}
+              alt={`Prélèvement ${patientName}`}
+              className="max-h-[600px] w-auto object-contain rounded-lg shadow-sm block"
             />
-            <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ objectFit: 'contain' }} />
+            <canvas 
+              ref={canvasRef} 
+              className="absolute top-0 left-0 w-full h-full pointer-events-none rounded-lg" 
+            />
         </div>
     </div>
   );

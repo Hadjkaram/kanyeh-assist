@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Brain, AlertTriangle, CheckCircle, Loader2, ZoomIn, Target } from 'lucide-react';
+import { Brain, AlertTriangle, CheckCircle, Loader2, ZoomIn, Target, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DetectedRegion {
@@ -20,17 +20,27 @@ interface DetectedRegion {
 
 interface AIAnalysisPanelProps {
   imageUrl?: string;
+  existingRegions?: DetectedRegion[]; // NOUVEAU: Pour la mémoire !
   onAnalysisComplete?: (regions: DetectedRegion[]) => void;
+  onSubmitAnalysis?: () => void; // NOUVEAU: Le bouton Soumettre !
 }
 
-const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisComplete }) => {
+const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, existingRegions, onAnalysisComplete, onSubmitAnalysis }) => {
   const { t } = useLanguage();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [detectedRegions, setDetectedRegions] = useState<DetectedRegion[]>([]);
 
-  // LA VRAIE FONCTION D'ANALYSE CONNECTÉE AU SERVEUR PYTHON
+  // NOUVEAU : Récupère la mémoire si on change d'onglet
+  useEffect(() => {
+    if (existingRegions && existingRegions.length > 0) {
+      setDetectedRegions(existingRegions);
+      setAnalysisComplete(true);
+      setProgress(100);
+    }
+  }, [existingRegions]);
+
   const runAnalysis = async () => {
     if (!imageUrl) {
       toast.error("Aucune image détectée. Veuillez d'abord sélectionner une image de la lame.");
@@ -42,7 +52,6 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
     setAnalysisComplete(false);
 
     try {
-      // 1. On récupère le fichier image depuis l'URL locale ou distante
       const response = await fetch(imageUrl);
       const blob = await response.blob();
       setProgress(40);
@@ -50,11 +59,8 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
       const formData = new FormData();
       formData.append("file", blob, "capture-lame.jpg");
 
-      // RÉCUPÉRATION DE L'URL DE L'API (Gère le local ET la production)
-      // Si la variable VITE_API_URL n'est pas définie sur Vercel, on tente localhost par défaut
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      const apiUrl = "https://kanyeh-assist.onrender.com";
 
-      // 2. On envoie l'image au VRAI serveur Python
       const aiResponse = await fetch(`${apiUrl}/analyze-slide`, {
         method: "POST",
         body: formData,
@@ -151,7 +157,7 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
               </Badge>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2">
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 <Target className="h-4 w-4 text-primary" />
                 {t('ai.detailedFindings')}
@@ -176,32 +182,23 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ imageUrl, onAnalysisC
                         {region.description}
                       </p>
                     </div>
-                    <Button variant="ghost" size="icon" className="shrink-0">
-                      <ZoomIn className="h-4 w-4" />
-                    </Button>
                   </div>
                 </div>
               ))}
             </div>
 
-            {detectedRegions.some(r => r.classification === 'suspicious' || r.classification === 'malignant') && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-amber-800">
-                    {t('ai.reviewRequired')}
-                  </p>
-                  <p className="text-xs text-amber-600">
-                    {t('ai.reviewDescription')}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <Button onClick={runAnalysis} variant="outline" className="w-full gap-2">
-              <Brain className="h-4 w-4" />
-              {t('ai.reanalyze')}
-            </Button>
+            {/* LES DEUX BOUTONS D'ACTION (Relancer & Soumettre) */}
+            <div className="space-y-3 pt-4 border-t">
+              <Button onClick={onSubmitAnalysis} className="w-full gap-2 font-bold text-md py-6">
+                <Send className="h-5 w-5" />
+                Soumettre le Diagnostic Final
+              </Button>
+              <Button onClick={runAnalysis} variant="outline" className="w-full gap-2">
+                <Brain className="h-4 w-4" />
+                {t('ai.reanalyze')}
+              </Button>
+            </div>
+            
           </div>
         )}
       </CardContent>

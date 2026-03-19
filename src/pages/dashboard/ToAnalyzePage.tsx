@@ -184,6 +184,7 @@ const ToAnalyzePage: React.FC = () => {
     setZoomLevel(100);
     setAnalysisNotes('');
     setDiagnosis('');
+    setAiDetectedRegions([]); // Reset de l'IA quand on ouvre un nouveau cas
     setViewMode('static');
   };
 
@@ -433,7 +434,7 @@ const ToAnalyzePage: React.FC = () => {
                 </div>
               </div>
               
-              <div className="flex-1 bg-muted/30 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center overflow-auto">
+              <div className="flex-1 bg-muted/30 rounded-lg border-2 border-dashed border-muted-foreground/20 flex items-center justify-center overflow-auto p-4">
                 
                 {viewMode === 'live' ? (
                   <div className="w-full h-full max-w-4xl max-h-[600px]">
@@ -502,7 +503,7 @@ const ToAnalyzePage: React.FC = () => {
                         <SelectItem value="normal">{t('diagnosis.normal')}</SelectItem>
                         <SelectItem value="benign">{t('diagnosis.benign')}</SelectItem>
                         <SelectItem value="atypical">{t('diagnosis.atypical')}</SelectItem>
-                        <SelectItem value="suspicious">{t('diagnosis.suspicious')}</SelectItem>
+                        <SelectItem value="suspicious">{t('dashboard.toAnalyze.suspicious')}</SelectItem>
                         <SelectItem value="malignant">{t('diagnosis.malignant')}</SelectItem>
                       </SelectContent>
                     </Select>
@@ -527,10 +528,12 @@ const ToAnalyzePage: React.FC = () => {
 
                 <TabsContent value="ai" className="mt-4">
                   <div className="space-y-4 animate-fade-in">
-                    {/* NOUVEAU : On connecte le panneau IA au rappel ! */}
+                    {/* BRANCHEMENT DE LA MÉMOIRE ET DU BOUTON SOUMETTRE */}
                     <AIAnalysisPanel 
                       imageUrl={selectedCase?.imageUrl} 
-                      onAnalysisComplete={handleAIAnalysisComplete} // <--- CA PERMET D'ENTOURER !
+                      existingRegions={aiDetectedRegions}
+                      onAnalysisComplete={handleAIAnalysisComplete}
+                      onSubmitAnalysis={submitAnalysis}
                     />
                   </div>
                 </TabsContent>
@@ -538,8 +541,7 @@ const ToAnalyzePage: React.FC = () => {
               </Tabs>
               
               <div className="pt-4 border-t space-y-2">
-                {/* NOUVEAU : Bouton déverrouillé et qui envoie TOUT */}
-                <Button className="w-full gap-2" onClick={submitAnalysis}>
+                <Button className="w-full gap-2" onClick={submitAnalysis} disabled={!isHumanDiagnosisComplete}>
                   <CheckCircle className="h-4 w-4" /> {t('action.submitAnalysis')}
                 </Button>
                 <Button variant="outline" className="w-full" onClick={() => setIsAnalysisMode(false)}>
