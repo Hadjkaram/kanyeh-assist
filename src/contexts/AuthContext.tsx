@@ -48,13 +48,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Erreur lors de la récupération du profil:', error);
+      // Sécurité supplémentaire : on réinitialise si la récupération échoue
+      setUser(null);
+      setIsAuthenticated(false);
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // On garantit que le chargement s'arrête
     }
   };
 
   useEffect(() => {
     let mounted = true;
+
+    // 🛡️ FILET DE SÉCURITÉ : Coupe le chargement de force après 2.5 secondes
+    const fallbackTimeout = setTimeout(() => {
+      if (mounted) {
+        setIsLoading(false);
+      }
+    }, 2500);
 
     // VÉRIFICATION DE LA MÉMOIRE DU NAVIGATEUR (Fermeture d'onglet, actualisation)
     const initSession = async () => {
@@ -90,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       mounted = false;
+      clearTimeout(fallbackTimeout); // On nettoie le minuteur quand le composant est détruit
       subscription.unsubscribe();
     };
   }, []);
