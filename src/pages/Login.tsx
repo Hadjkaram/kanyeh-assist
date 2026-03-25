@@ -18,6 +18,7 @@ import {
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import kanyehLogo from '@/assets/kanyeh-logo.jpg';
 import { ArrowLeft, Loader2, LogIn, UserPlus } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Login: React.FC = () => {
   const { t } = useLanguage();
@@ -38,16 +39,37 @@ const Login: React.FC = () => {
     }
   }, [isLoading, isAuthenticated, navigate]);
 
+  // NOUVELLE FONCTION DE CONNEXION AVEC TIMEOUT ET FORÇAGE DE REDIRECTION
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    console.log("1. Début de la tentative de connexion pour :", email);
+
     try {
-      await login(email, password);
-      // Le useEffect ci-dessus s'occupera de faire la redirection au tableau de bord.
-    } catch (error) {
-      console.error(error);
+      // On lance la connexion avec une course contre la montre (8 secondes max)
+      const loginPromise = login(email, password);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("La connexion met trop de temps (Vérifiez votre réseau ou vos bloqueurs de pub)")), 8000)
+      );
+
+      // Le premier qui finit gagne (soit la connexion réussit, soit le délai est dépassé)
+      await Promise.race([loginPromise, timeoutPromise]);
+      
+      console.log("2. Connexion réussie à Supabase !");
+      
+      // FORÇAGE DE REDIRECTION : Si l'état de React est lent à se mettre à jour, on force le passage
+      toast.success("Redirection vers le tableau de bord...");
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+        window.location.reload(); // Force un rechargement propre de la page et des contextes
+      }, 1000);
+
+    } catch (error: any) {
+      console.error("3. Erreur de connexion capturée :", error);
+      toast.error(error.message || "Identifiants incorrects ou erreur réseau.");
     } finally {
-      setIsSubmitting(false);
+      console.log("4. Arrêt du spinner");
+      setIsSubmitting(false); // Cela arrêtera le spinner quoiqu'il arrive
     }
   };
 
