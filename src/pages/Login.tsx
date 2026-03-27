@@ -27,27 +27,19 @@ const Login: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    // La magie est ici : on écoute silencieusement. Dès que Supabase a validé ton profil, on ouvre la porte !
     if (!isLoading && isAuthenticated) {
-      window.location.href = '/dashboard';
+      navigate('/dashboard', { replace: true });
     }
-  }, [isLoading, isAuthenticated]);
+  }, [isLoading, isAuthenticated, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      // Nettoyage pour éviter les bugs de mémoire
-      localStorage.removeItem('supabase.auth.token'); 
-      
-      const loginTask = login(email, password);
-      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("Délai d'attente dépassé.")), 8000));
-      
-      await Promise.race([loginTask, timeoutTask]);
-      toast.success("Connexion réussie !");
-      
-      // REDIRECTION FORCÉE (Le bulldozer)
-      window.location.href = '/dashboard';
-      
+      await login(email, password);
+      toast.success("Identifiants acceptés ! Chargement du profil...");
+      // Plus de redirection brutale. Le "useEffect" ci-dessus prend le relais.
     } catch (error: any) {
       toast.error(error.message || "Identifiants incorrects.");
       setIsSubmitting(false);
@@ -58,15 +50,9 @@ const Login: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const registerTask = register(email, password, fullName, role as UserRole | 'patient', center);
-      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("Délai d'attente dépassé.")), 8000));
-      
-      await Promise.race([registerTask, timeoutTask]);
-      toast.success("Inscription validée !");
-      
-      // REDIRECTION FORCÉE (Le bulldozer)
-      window.location.href = '/dashboard';
-      
+      await register(email, password, fullName, role as UserRole | 'patient', center);
+      toast.success("Inscription validée ! Chargement du profil...");
+      // Plus de redirection brutale.
     } catch (error: any) {
       toast.error(error.message || "Impossible de créer le compte.");
       setIsSubmitting(false);

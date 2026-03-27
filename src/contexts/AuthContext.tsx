@@ -38,8 +38,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         setIsAuthenticated(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur profil:', error);
+      // NOUVEAU : Si la base rejette ton profil, tu le sauras immédiatement !
+      toast.error("Profil introuvable dans la base de données. (" + error.message + ")");
       setUser(null);
       setIsAuthenticated(false);
     } finally {
@@ -50,16 +52,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    // ARRÊT D'URGENCE : Si Supabase ne répond pas en 6s, on libère l'écran
-    const fallbackTimeout = setTimeout(() => {
-      if (mounted && isLoading) setIsLoading(false);
-    }, 6000);
-
     const initSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
-        
+
         if (session && mounted) {
           await fetchUserProfile(session.user.id);
         } else if (mounted) {
@@ -85,7 +82,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       mounted = false;
-      clearTimeout(fallbackTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -96,19 +92,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = async (email: string, password: string, fullName: string, role: UserRole | 'patient', center?: string) => {
-    // 1. Création du compte de connexion
     const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
     if (authError) throw authError;
 
-    // 2. Création du profil public
     if (authData.user) {
       const { error: profileError } = await supabase.from('profiles').insert([
         { id: authData.user.id, email: email, full_name: fullName, role: role, center: center || null }
       ]);
-      // Si la RLS bloque l'inscription, l'erreur remontera ici immédiatement
       if (profileError) {
-        console.error("Erreur d'insertion:", profileError);
-        throw new Error(`La base de données a bloqué le profil (Erreur: ${profileError.message})`);
+        throw new Error(`Erreur profil: ${profileError.message}`);
       }
     }
   };
