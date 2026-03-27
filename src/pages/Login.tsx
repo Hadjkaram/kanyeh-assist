@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase'; // Import direct de Supabase
 import { UserRole } from '@/types/user';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ import { toast } from 'sonner';
 
 const Login: React.FC = () => {
   const { t } = useLanguage();
-  const { login, register, isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -32,50 +33,73 @@ const Login: React.FC = () => {
   const [center, setCenter] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // REDIRECTION AUTOMATIQUE
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
       navigate('/dashboard', { replace: true });
     }
   }, [isLoading, isAuthenticated, navigate]);
 
+  // MÉTHODE RADICALE DE CONNEXION (Bypass du contexte, attaque directe)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
-      const loginPromise = login(email, password);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("La connexion met trop de temps (Vérifiez votre réseau)")), 8000)
-      );
+      // 1. On tue toute session fantôme corrompue en mémoire
+      await supabase.auth.signOut();
+      localStorage.clear();
 
-      await Promise.race([loginPromise, timeoutPromise]);
+      // 2. On connecte directement l'utilisateur
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       
-      // On navigue DOUCEMENT sans recharger brutalement la page
-      toast.success("Redirection vers le tableau de bord...");
-      setTimeout(() => {
-        navigate('/dashboard', { replace: true });
-      }, 800);
+      if (error) throw error;
+      if (!data.user) throw new Error("Erreur inconnue de Supabase");
+
+      toast.success("Connexion réussie !");
+      
+      // 3. Redirection ABSOLUE du navigateur (impossible à bloquer)
+      window.location.href = '/dashboard';
 
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Identifiants incorrects ou erreur réseau.");
-    } finally {
+      console.error("Erreur de connexion :", error);
+      toast.error(error.message || "Identifiants incorrects.");
       setIsSubmitting(false);
     }
   };
 
+  // MÉTHODE RADICALE D'INSCRIPTION
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+
     try {
-      await register(email, password, fullName, role as UserRole | 'patient', center);
-      setEmail('');
-      setPassword('');
-      setFullName('');
-    } catch (error) {
-      console.error(error);
-    } finally {
+      await supabase.auth.signOut();
+      localStorage.clear();
+
+      // 1. Création dans Authentication
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+      if (authError) throw authError;
+
+      // 2. Création forcée dans la table Profiles
+      if (authData.user) {
+        const { error: profileError } = await supabase.from('profiles').insert([
+          {
+            id: authData.user.id,
+            email: email,
+            full_name: fullName,
+            role: role,
+            center: center || null,
+          }
+        ]);
+        if (profileError) throw profileError;
+      }
+
+      toast.success("Inscription validée ! Ouverture de votre espace...");
+      window.location.href = '/dashboard';
+
+    } catch (error: any) {
+      console.error("Erreur d'inscription :", error);
+      toast.error(error.message || "Impossible de créer le compte.");
       setIsSubmitting(false);
     }
   };
