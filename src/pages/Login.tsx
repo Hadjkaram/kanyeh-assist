@@ -28,23 +28,28 @@ const Login: React.FC = () => {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      window.location.href = '/dashboard';
     }
-  }, [isLoading, isAuthenticated, navigate]);
+  }, [isLoading, isAuthenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      // Nettoyage pour éviter les bugs de mémoire
+      localStorage.removeItem('supabase.auth.token'); 
+      
       const loginTask = login(email, password);
-      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("Délai d'attente dépassé (Réseau lent)")), 8000));
+      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("Délai d'attente dépassé.")), 8000));
       
       await Promise.race([loginTask, timeoutTask]);
       toast.success("Connexion réussie !");
-      navigate('/dashboard', { replace: true });
+      
+      // REDIRECTION FORCÉE (Le bulldozer)
+      window.location.href = '/dashboard';
+      
     } catch (error: any) {
       toast.error(error.message || "Identifiants incorrects.");
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -54,14 +59,16 @@ const Login: React.FC = () => {
     setIsSubmitting(true);
     try {
       const registerTask = register(email, password, fullName, role as UserRole | 'patient', center);
-      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("Délai d'attente dépassé. Vérifiez votre réseau.")), 8000));
+      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("Délai d'attente dépassé.")), 8000));
       
       await Promise.race([registerTask, timeoutTask]);
       toast.success("Inscription validée !");
-      navigate('/dashboard', { replace: true });
+      
+      // REDIRECTION FORCÉE (Le bulldozer)
+      window.location.href = '/dashboard';
+      
     } catch (error: any) {
       toast.error(error.message || "Impossible de créer le compte.");
-    } finally {
       setIsSubmitting(false);
     }
   };
