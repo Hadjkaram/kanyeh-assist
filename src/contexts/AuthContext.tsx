@@ -31,13 +31,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data) {
         const nameParts = data.full_name ? data.full_name.split(' ') : ['Utilisateur', ''];
-        const firstName = nameParts[0] || 'Utilisateur';
-        const lastName = nameParts.slice(1).join(' ') || '';
-
         setUser({
           id: data.id,
-          firstName: firstName,
-          lastName: lastName,
+          firstName: nameParts[0] || 'Utilisateur',
+          lastName: nameParts.slice(1).join(' ') || '',
           role: data.role as UserRole,
           email: data.email,
           centerId: 'C001',
@@ -48,25 +45,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Erreur lors de la récupération du profil:', error);
-      // Sécurité supplémentaire : on réinitialise si la récupération échoue
       setUser(null);
       setIsAuthenticated(false);
     } finally {
-      setIsLoading(false); // On garantit que le chargement s'arrête
+      setIsLoading(false); 
     }
   };
 
   useEffect(() => {
     let mounted = true;
 
-    // 🛡️ FILET DE SÉCURITÉ : Coupe le chargement de force après 2.5 secondes
+    // 🛡️ TOLÉRANCE AUGMENTÉE : On donne 7 secondes à Supabase pour répondre (utile si le réseau est lent)
     const fallbackTimeout = setTimeout(() => {
-      if (mounted) {
+      if (mounted && isLoading) {
         setIsLoading(false);
       }
-    }, 2500);
+    }, 7000);
 
-    // VÉRIFICATION DE LA MÉMOIRE DU NAVIGATEUR (Fermeture d'onglet, actualisation)
     const initSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -75,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (session && mounted) {
           await fetchUserProfile(session.user.id);
         } else if (mounted) {
-          setIsLoading(false); // Aucun utilisateur trouvé en mémoire
+          setIsLoading(false);
         }
       } catch (error) {
         console.error("Erreur d'initialisation de session", error);
@@ -85,22 +80,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initSession();
 
-    // ÉCOUTEUR EN TEMPS RÉEL (Déconnexion, expiration)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
       if (_event === 'SIGNED_OUT' || !session) {
-        if (mounted) {
-          setUser(null);
-          setIsAuthenticated(false);
-          setIsLoading(false);
-        }
-      } else if (session && mounted) {
+        setUser(null);
+        setIsAuthenticated(false);
+        setIsLoading(false);
+      } else if (session) {
         await fetchUserProfile(session.user.id);
       }
     });
 
     return () => {
       mounted = false;
-      clearTimeout(fallbackTimeout); // On nettoie le minuteur quand le composant est détruit
+      clearTimeout(fallbackTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -118,10 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (email: string, password: string, fullName: string, role: UserRole | 'patient', center?: string) => {
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
 
       if (authData.user) {
@@ -136,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]);
         if (profileError) throw profileError;
       }
-      toast.success('Inscription réussie ! Vous pouvez maintenant vous connecter.');
+      toast.success('Inscription réussie ! Vous pouvez vous connecter.');
     } catch (error: any) {
       toast.error(error.message || "Erreur lors de l'inscription");
       throw error;
@@ -144,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    setIsLoading(true); // On bloque l'interface pendant la déconnexion
+    setIsLoading(true);
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
@@ -164,8 +154,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

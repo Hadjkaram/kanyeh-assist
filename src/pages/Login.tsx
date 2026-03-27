@@ -32,44 +32,36 @@ const Login: React.FC = () => {
   const [center, setCenter] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // REDIRECTION AUTOMATIQUE (Fermeture de l'onglet, etc.)
+  // REDIRECTION AUTOMATIQUE
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate('/dashboard', { replace: true }); // replace: true empêche de faire "retour" pour revenir au login !
+      navigate('/dashboard', { replace: true });
     }
   }, [isLoading, isAuthenticated, navigate]);
 
-  // NOUVELLE FONCTION DE CONNEXION AVEC TIMEOUT ET FORÇAGE DE REDIRECTION
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    console.log("1. Début de la tentative de connexion pour :", email);
 
     try {
-      // On lance la connexion avec une course contre la montre (8 secondes max)
       const loginPromise = login(email, password);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("La connexion met trop de temps (Vérifiez votre réseau ou vos bloqueurs de pub)")), 8000)
+        setTimeout(() => reject(new Error("La connexion met trop de temps (Vérifiez votre réseau)")), 8000)
       );
 
-      // Le premier qui finit gagne (soit la connexion réussit, soit le délai est dépassé)
       await Promise.race([loginPromise, timeoutPromise]);
       
-      console.log("2. Connexion réussie à Supabase !");
-      
-      // FORÇAGE DE REDIRECTION : Si l'état de React est lent à se mettre à jour, on force le passage
+      // On navigue DOUCEMENT sans recharger brutalement la page
       toast.success("Redirection vers le tableau de bord...");
       setTimeout(() => {
         navigate('/dashboard', { replace: true });
-        window.location.reload(); // Force un rechargement propre de la page et des contextes
-      }, 1000);
+      }, 800);
 
     } catch (error: any) {
-      console.error("3. Erreur de connexion capturée :", error);
+      console.error(error);
       toast.error(error.message || "Identifiants incorrects ou erreur réseau.");
     } finally {
-      console.log("4. Arrêt du spinner");
-      setIsSubmitting(false); // Cela arrêtera le spinner quoiqu'il arrive
+      setIsSubmitting(false);
     }
   };
 
@@ -88,7 +80,6 @@ const Login: React.FC = () => {
     }
   };
 
-  // BOUCLIER : On ne montre le formulaire que si on est sûr que l'utilisateur n'est pas déjà connecté
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background flex items-center justify-center">
